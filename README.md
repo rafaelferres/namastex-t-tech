@@ -485,17 +485,35 @@ QUOTE_FAILURE_RATE=1.0 docker compose up   # força a escada até o N3
 
 Resiliência medida com os decorators reais e uma folha simulada, sem rede:
 
-| Configuração | Referência teórica | Falhas medidas | Chamadas físicas |
+| Configuração | Orçamento de cotação | Falhas medidas | Chamadas físicas |
 |---|---|---|---|
-| Retry, três tentativas, sem hedge | 2,7% | **2,72% — 272/10.000** | 13.822 |
-| Retry por fora, hedge por dentro | 1,2167% | **1,18% — 118/10.000** | 14.036 |
+| Três tentativas, sem hedge | Sem corte por tempo (20 s não vinculantes) | **2,72% — 272/10.000** | 13.822 |
+| Três tentativas, com hedge | Sem corte por tempo (20 s não vinculantes) | **1,18% — 118/10.000** | 14.036 |
+| Três tentativas, sem hedge | Produção: **3,5 s** | **3,29% — 329/10.000** | 13.738 |
+| Três tentativas, com hedge | Produção: **3,5 s** | **2,43% — 243/10.000** | 13.857 |
 
 Seed 42 para a folha (20% de falha imediata, 10% de resposta lenta e 70% de sucesso),
 seed 2026 para jitter, timeout virtual de 2 s e janela de hedge de 1,5 s.
-O orçamento de 20 s permite completar as três tentativas; esses números não medem
-um turno completo limitado a 6 s. Sucessos são imediatos no duplo. Tolerância do
-portão: 0,5 ponto percentual em cada cenário. Reprodução:
+Sucessos são imediatos no duplo. O cenário de 20 s não corta nenhuma tentativa:
+três tentativas hedgeadas levam no máximo 10,8 s com esses delays. Tolerância do
+portão: 0,5 ponto percentual; referência teórica nos cenários sem corte e baseline
+medida nos cenários de produção. Reprodução:
 `uv run pytest tests/unit/test_residual_rate.py -q -s`.
+
+O limite de produção aumenta a falha com hedge em **1,25 ponto percentual**;
+a taxa de 1,18% não descreve produção. A melhora sobre a cadeia sem hedge continua
+existindo (3,29% → 2,43%). Mantidos três tentativas e timeout de 2 s até medir a
+latência dos sucessos reais: reduzir timeout apenas neste duplo favoreceria
+artificialmente o resultado. `QuoteConfig` permite alterar orçamento, timeout,
+janela e tentativas; `PRODUCTION_QUOTE_BUDGET` define o padrão de 3,5 s (D-008).
+
+A cadeia implementada é `Guard → Cache → Retry → Hedge → Http`, montada por
+`infrastructure.wiring.build_quote_provider`. O chamador injeta cliente HTTP,
+cache SQLite, regras, relógio, sleep e RNG, e controla o fechamento dos recursos.
+`persistence.connection.connect` configura SQLite e aplica apenas `quote_cache`.
+Acertos trazem `origem=cache`; recusas locais trazem `origem=regra_local`.
+Os 3,5 s limitam Retry/Hedge/HTTP, não o carregamento de regras ou I/O do cache;
+a propagação do deadline do turno inteiro será responsabilidade da aplicação.
 
 ---
 

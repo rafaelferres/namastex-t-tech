@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from domain._parsing import mapping, money, nonnegative_integer, string, strings
 
@@ -51,6 +52,9 @@ class QuoteContractError(Exception):
 class Declined:
     motivo: str
     ano_normalizado: bool = field(default=False, kw_only=True, compare=False)
+    origem: Literal["api", "cache", "regra_local"] = field(
+        default="api", kw_only=True, compare=False
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +82,9 @@ class Quote:
     moeda: str
     primeiro_pagamento_pro_rata: ProRata | None = None
     ano_normalizado: bool = field(default=False, kw_only=True, compare=False)
+    origem: Literal["api", "cache", "regra_local"] = field(
+        default="api", kw_only=True, compare=False
+    )
 
     @classmethod
     def from_api(cls, payload: object) -> Quote:

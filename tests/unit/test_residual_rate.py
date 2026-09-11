@@ -9,12 +9,14 @@ import pytest
 
 from application.ports import QuoteProvider
 from domain.quote import Quote, QuoteOutcome, QuoteRequest, QuoteUnavailable
+from infrastructure.quote.config import PRODUCTION_QUOTE_BUDGET, QuoteConfig
 from infrastructure.quote.hedge import HedgingQuoteProvider
 from infrastructure.quote.retry import RetryingQuoteProvider
 from tests.virtual_time import Timeline, virtual_time
 
 TRIALS = 10_000
 SEED = 42
+CONFIG = QuoteConfig()
 
 
 class ProbabilisticApi:
@@ -31,16 +33,25 @@ class ProbabilisticApi:
             raise QuoteUnavailable()
         if roll < 0.30:
             # An eight-second API response hits the HTTP client's two-second timeout.
-            await self.timeline.sleep(2.0)
+            await self.timeline.sleep(CONFIG.timeout)
             raise QuoteUnavailable()
         return self.result
 
 
-@pytest.mark.parametrize(("use_hedge", "expected"), [(False, 0.027), (True, 0.23**3)])
+@pytest.mark.parametrize(
+    ("use_hedge", "budget", "expected"),
+    [
+        (False, 20.0, 0.027),
+        (True, 20.0, 0.23**3),
+        (False, PRODUCTION_QUOTE_BUDGET, 0.0329),
+        (True, PRODUCTION_QUOTE_BUDGET, 0.0243),
+    ],
+)
 def test_seeded_residual_failure_rate(
     quote_payload: dict[str, Any],
     use_hedge: bool,
     expected: float,
+    budget: float,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def forbidden(*args: object, **kwargs: object) -> None:
@@ -52,13 +63,15 @@ def test_seeded_residual_failure_rate(
         leaf = ProbabilisticApi(timeline, Quote.from_api(quote_payload))
         inner: QuoteProvider = leaf
         if use_hedge:
-            inner = HedgingQuoteProvider(inner, hedge_delay=1.5, sleep=timeline.sleep)
+            inner = HedgingQuoteProvider(
+                inner, hedge_delay=CONFIG.hedge_delay, sleep=timeline.sleep
+            )
         chain = RetryingQuoteProvider(
             inner,
-            max_attempts=3,
-            base_delay=0.1,
-            max_delay=0.4,
-            budget=20,
+            max_attempts=CONFIG.max_attempts,
+            base_delay=CONFIG.base_delay,
+            max_delay=CONFIG.max_delay,
+            budget=budget,
             sleep=timeline.sleep,
             rng=random.Random(2026).random,
             clock=timeline,
@@ -71,13 +84,17 @@ def test_seeded_residual_failure_rate(
                 try:
                     assert await chain.quote(req) is leaf.result
                 except QuoteUnavailable as error:
-                    assert error.tentativas == 3
+                    assert 1 <= error.tentativas <= 3
                     failures += 1
             assert asyncio.all_tasks() == {asyncio.current_task()}
             return failures
 
         failures = timeline.run(trials())
     rate = failures / TRIALS
-    print(f"hedge={use_hedge}: {failures}/{TRIALS} = {rate:.4%}; physical_calls={leaf.calls}")
+    print(
+        f"hedge={use_hedge}, budget={budget}: {failures}/{TRIALS} = {rate:.4%}; "
+        f"physical_calls={leaf.calls}"
+    )
+    # Unbounded: theoretical reference. Production: measured regression baseline (D-008).
     # 0.5 percentage points; fixed seed and schedule avoid stochastic CI failures.
     assert abs(rate - expected) < 0.005

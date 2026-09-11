@@ -3,8 +3,8 @@
 Documento técnico do sistema. Para as decisões e seus fundamentos, ver o
 `README.md`. Para as regras que governam alterações de código, ver `AGENTS.md`.
 
-Estado após a Tarefa 3: domínio, portas, cliente HTTP, catálogo com TTL,
-retry e hedge estão implementados. Guard, cache de cotação, trace, persistência,
+Estado após a Tarefa 4: domínio, portas, HTTP, catálogo, guard, retry, hedge e
+cache SQLite estão implementados. Trace, demais tabelas de persistência,
 grafo e adapters de entrada ainda são desenho das próximas fases.
 
 ---
@@ -186,8 +186,8 @@ Com timeout de 2s, a resposta lenta também é falha do ponto de vista do client
 | sem hedge | 30% | 2,7% |
 | com hedge aos 1,5s | 23% | 1,2% |
 
-Por isso **o hedge não é otimização, é componente necessário**: sem ele a falha
-residual triplica. Ele é viável porque `/quote` é função pura, sem efeito
+Por isso **o hedge não é otimização, é componente necessário**: sem corte por deadline, ele reduz a falha
+residual teórica de 2,7% para aproximadamente 1,2%. Ele é viável porque `/quote` é função pura, sem efeito
 colateral — a chamada duplicada não causa dano.
 
 O hedge trata apenas latência. Falha rápida é responsabilidade do `Retry`.
@@ -223,6 +223,17 @@ seed 42, tempo virtual, sucesso imediato e budget de 20 s para permitir as três
 tentativas completas. Não representa a disponibilidade do turno inteiro com
 budget de 6 s; esse corte precisa de medição própria na integração.
 
+### Orçamento de produção medido
+
+`QuoteConfig.budget` usa `PRODUCTION_QUOTE_BUDGET = 3.5` e pode ser substituído
+no wiring. Com seed 42, 10.000 execuções por cenário e três tentativas: sem corte
+por tempo, 2,72% sem hedge e 1,18% com hedge; com 3,5 s, **3,29% sem hedge e
+2,43% com hedge**. Os 20 s da medição anterior nunca vinculam (máximo de 10,8 s).
+Mantidos timeout 2 s e janela 1,5 s: latência de sucesso ainda não foi medida,
+portanto encurtar timeout com base apenas no duplo seria otimização enganosa (D-008).
+O budget cobre Retry/Hedge/Http; guard e I/O de cache ficam fora dele nesta fase.
+O prazo total do turno exige propagação futura pela aplicação.
+
 ### Cache exato
 
 `cotar()` é determinística sobre os cinco slots mais `date.today()`. O cache não é
@@ -235,6 +246,19 @@ TTL   = até meia-noite
 
 O dia entra na chave porque a API deriva a idade do veículo de `date.today()`.
 Recusas também são cacheadas, por serem igualmente determinísticas.
+
+O wiring atual monta `Guard → Cache → Retry → Hedge → Http`, com todas as
+dependências injetadas. `EligibilityGuardProvider` marca recusas como regra_local,
+preserva o request, avalia uma cópia com ano seguinte normalizado e falha aberto
+se `current()` retornar None ou lançar exceção. Erro de parse continua explícito
+para consumidores diretos do catálogo; no guard é registrado sem payload e deixa
+a API decidir. Cancelamento propaga.
+
+`CachingQuoteProvider` captura o calendário de `Clock.now()` uma vez para chave
+e meia-noite seguinte. SQLite verifica expiração no get; resposta concluída após
+a meia-noite original não é gravada. Cache copia o resultado com origem cache,
+sem alterar preço nem a proveniência de normalização histórica. Erros de cache
+são registrados só com códigos genéricos, sem request, CEP ou traceback.
 
 ### Escada de degradação
 
@@ -536,6 +560,26 @@ SQLite não tem tipo decimal nem booleano nativo.
 arredondado de forma errada é exatamente o tipo de defeito que a invariante do
 preço existe para evitar.
 
+### Fundação implementada na Tarefa 4
+
+`infrastructure/persistence/schema.sql` contém somente `quote_cache`, com
+fingerprint, outcome JSON e expira_em em TEXT. `connect` aplica o schema no
+startup e configura os três pragmas. WAL é verificado em arquivo temporário;
+SQLite em memória usa journal_mode=memory por limitação do próprio SQLite.
+Decimais são strings no JSON e instantes são ISO-8601 em UTC. Não há request
+ou CEP persistido. Datas ingênuas de SystemClock são interpretadas no fuso local,
+que deve ser o mesmo da API; relógios conscientes preservam seu fuso na meia-noite.
+
+`SQLiteQuoteCache` usa uma conexão dedicada, worker threads e lock para serializar
+operações sem bloquear o event loop. Cancelamento aguarda o worker antes de
+propagar para permitir fechamento seguro; uma escrita já iniciada pode completar.
+O busy_timeout pode acrescentar até 5 s por disputa de lock, fora do budget do
+retry, além da espera por operações enfileiradas. Antes de prometer 6 s por turno, a aplicação precisa limitar também catálogo
+e cache. Shutdown deve aguardar todos os consumidores antes de fechar a conexão.
+
+O esquema a seguir é o alvo das fases seguintes; as demais tabelas ainda não são
+criadas no startup atual.
+
 ### Esquema
 
 ```sql
@@ -622,7 +666,7 @@ CREATE TABLE outbound_messages (          -- outbox
 de 2.500 conversas têm timestamp monotônico, e ordenar por ele reposiciona 67,6%
 das mensagens.
 
-O esquema é aplicado por um `schema.sql` idempotente no startup. Com sete tabelas
+O esquema evoluirá no `schema.sql` idempotente aplicado no startup. Com sete tabelas
 e escopo fechado, alembic seria cerimônia sem retorno — e um comando a mais no
 README.
 
