@@ -4,6 +4,36 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Fixed — Tarefa 11, 2026-09-11
+
+- Teto de LLM dimensionado por conversa (D-038): 7 s por chamada, o p99.9 do extrator em
+  7.499 chamadas, e a chamada que estoura ou volta indisponível é refeita uma vez dentro
+  do prazo do turno, que passa para 18 s. Configuração, contrato e tokens não são
+  retentados. Mesmas 150 conversas: **64 → 73 cotadas (48,7%)**, elegíveis sem documento
+  **73/74 (98,6%)**, LLM cortado **9 → 0**. O retry disparou uma vez e recuperou o turno;
+  o teto antigo teria cortado 5 extrações na rodada. Turno p50 1,58 s, p99 5,05 s.
+- Purga oportunista de slots (D-038): na partida e a cada turno, conversa aberta sem
+  mensagem do lead há mais de 24 h é encerrada (slots, estado do grafo, status); lead que
+  volta reabre. Cifrar o CEP em repouso fica descartado por decisão registrada.
+- `.env.example` alinhado ao código: tetos de 7 s e `LLM_MEDIA_MODEL`.
+
+### Added — Tarefa 11
+
+- Inspeção por conversa: `python -m interfaces.trace --conversation <id>` lê, turno a
+  turno, estado final do checkpointer, timeline, tentativas, mensagem ao lead e snapshot
+  de escalação, só em leitura. `scripts/execution_log.py` gera
+  `docs/execucao-completa.md` (qualificação, objeção, cotação com falha, lenta e hedge,
+  carência e pro-rata) e `docs/execucao-escalacao.md` (escada esgotada e snapshot),
+  reproduzíveis com `QUOTE_SEED` fixo.
+- Comparação com a baseline humana, medida com o agente inteiro: **751/751 inelegíveis
+  recusados** pela regra local, sem nenhuma chamada à `/quote` e nenhum preço (humano:
+  0/751); **73/73 cotações consistentes com a tabela** no perfil real do lead e **73/73
+  com carência mencionada** (humano: 0/2.500 em ambas).
+- README revisado contra o código: comandos, árvore, grafo, escada, gatilhos e
+  limitações passam a descrever o que existe; promessas não cumpridas viraram limitação.
+- Validação: **651 passed** no loop rápido; **663 passed** na suíte completa com o
+  corpus; ruff e mypy limpos.
+
 ### Fixed — Tarefa 10, 2026-09-11
 
 - Disciplina de erro em todo cliente externo (D-035). A auditoria achou irmãos do 404

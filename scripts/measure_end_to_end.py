@@ -18,6 +18,7 @@ import time
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -28,8 +29,9 @@ from agent.nodes.converse import Converser
 from agent.nodes.extract import SlotExtractor
 from application.llm import LLMRequest, LLMResponse
 from application.ports import SystemClock
-from domain.messages import InboundMessage, Intent, OutboundMessage, PedirDado
-from domain.quote import Declined
+from domain.acceptance import AcceptanceRules
+from domain.messages import ApresentarCotacao, InboundMessage, Intent, OutboundMessage, PedirDado
+from domain.quote import Declined, Quote, QuoteRequest
 from infrastructure.llm.budget import BudgetedLLMClient
 from infrastructure.llm.config import LLMConfig
 from infrastructure.llm.http import OpenRouterLLMClient
@@ -38,6 +40,8 @@ from infrastructure.wiring import SalesStack, open_sales_stack
 from interfaces.rendering import render_outbound
 from interfaces.replay import dataset_path, read_rows
 from tests.fakes import CANONICAL_OBJECTIONS
+from tests.golden.harness import cases_from_rows
+from tests.regression.oracle import negative_cases
 
 # turno (total, extração, fala, cotação), LLM (timeout HTTP, teto por chamada), tokens
 SCENARIOS: dict[str, tuple[tuple[float, float, float, float], tuple[float, float], int]] = {
@@ -45,9 +49,14 @@ SCENARIOS: dict[str, tuple[tuple[float, float, float, float], tuple[float, float
     "medicao": ((120.0, 30.0, 30.0, 3.5), (30.0, 30.0), 10**7),  # sem corte
     # recalibrado pelo piloto sem corte (D-034): tetos acima do p99 de cada etapa
     "depois": ((10.0, 3.5, 4.5, 3.5), (4.5, 4.5), 16000),
+    # D-038: teto no p99.9 por chamada, um retry, turno que comporta o caminho no p99.9
+    "p999": ((18.0, 7.0, 7.0, 3.5), (7.0, 7.0), 16000),
 }
 START = "Pode começar em 15/10/2026."
+START_DATE = date(2026, 10, 15)
 PLAN = "Pode cotar o plano Completo."
+# Gabarito do CEP: o gerador escreve "cep 99999-999" em toda conversa (2.500 de 2.500).
+TRUE_CEP = re.compile(r"\bcep\s+(\d{5}-?\d{3})\b", re.IGNORECASE)
 REASONS = {
     "cotacao_esgotada": "indisponibilidade",
     "prazo_do_turno": "prazo",
@@ -132,6 +141,7 @@ async def run_conversation(
     quoted = objection_sent = False
     final: OutboundMessage | None = None
     reply: OutboundMessage | None = None
+    shown: dict[str, object] | None = None
 
     async def send(messages: list[tuple[str, str, int]]) -> OutboundMessage | None:
         nonlocal turns, asked_for_file
@@ -163,10 +173,23 @@ async def run_conversation(
         return await send([("text", text, position)])
 
     def settle(message: OutboundMessage | None) -> bool:
-        nonlocal quoted, final
+        nonlocal quoted, final, shown
         if message is None:
             return False
         quoted = quoted or message.intent is Intent.APRESENTAR_COTACAO
+        if shown is None and isinstance(message.payload, ApresentarCotacao):
+            # O que o lead viu, para conferir depois contra a tabela no perfil real.
+            quote = message.payload.quote
+            rata = quote.primeiro_pagamento_pro_rata
+            shown = {
+                "plano_id": quote.plano_id,
+                "premio_mensal": str(quote.premio_mensal),
+                "franquia": str(quote.franquia),
+                "pro_rata": str(rata.valor_primeiro_pagamento) if rata else None,
+                "carencia_dias": quote.carencia.dias,
+                "menciona_carencia": f"Carência de {quote.carencia.dias} dias"
+                in render_outbound(message),
+            }
         if message.intent in (Intent.RECUSAR, Intent.ESCALAR):
             final = message
             return True
@@ -214,6 +237,82 @@ async def run_conversation(
         "pedidos_de_arquivo": asked_for_file,
         "espera_s": walls,
         "erro": error,
+        "cotacao": shown,
+    }
+
+
+async def table_quote(client: httpx.AsyncClient, request: QuoteRequest) -> Quote | Declined:
+    """A /quote é a tabela; a instabilidade é sorteada, então insiste até ter resposta."""
+    for _ in range(12):
+        try:
+            response = await client.post("/quote", json=request.to_payload(), timeout=10.0)
+        except httpx.TimeoutException:
+            continue
+        if response.status_code == 200:
+            return Quote.from_api(response.json())
+        if response.status_code == 422:
+            return Declined(str(response.json()))
+    raise RuntimeError("Tabela indisponível após 12 tentativas")
+
+
+async def verify_quotes(
+    client: httpx.AsyncClient,
+    grouped: Mapping[str, Sequence[Mapping[str, object]]],
+    results: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    """Cotação que o lead viu contra a tabela no perfil REAL (gabarito do dataset).
+
+    Pega extração errada também: perfil trocado dá preço de outro perfil.
+    """
+    checked = consistent = applicable = mentioned = 0
+    divergent: list[dict[str, object]] = []
+    for item in results:
+        shown = item["cotacao"]
+        if not isinstance(shown, dict):
+            continue
+        rows = grouped[str(item["conversation_id"])]
+        (case,) = cases_from_rows(rows)
+        lead = [
+            str(row["message_body"])
+            for row in sorted(rows, key=lambda row: int(str(row["message_index"])))
+            if row["sender_role"] == "lead"
+        ]
+        cep = next((match[1] for text in lead if (match := TRUE_CEP.search(text))), None)
+        request = QuoteRequest(
+            str(shown["plano_id"]),
+            case.idade,
+            int(case.veiculo_texto.rsplit(" ", 1)[1]),
+            cep=cep,
+            data_inicio=START_DATE,
+        )
+        expected = await table_quote(client, request)
+        checked += 1
+        if isinstance(expected, Declined):
+            divergent.append({"conversation_id": item["conversation_id"], "campos": ["recusa"]})
+        else:
+            rata = expected.primeiro_pagamento_pro_rata
+            truth = {
+                "premio_mensal": expected.premio_mensal,
+                "franquia": expected.franquia,
+                "pro_rata": rata.valor_primeiro_pagamento if rata else None,
+            }
+            fields = [
+                name
+                for name, value in truth.items()
+                if (Decimal(str(shown[name])) if shown[name] is not None else None) != value
+            ]
+            consistent += not fields
+            if fields:
+                divergent.append({"conversation_id": item["conversation_id"], "campos": fields})
+        if int(str(shown["carencia_dias"])) > 0:
+            applicable += 1
+            mentioned += bool(shown["menciona_carencia"])
+    return {
+        "cotacoes_verificadas": checked,
+        "consistentes_com_a_tabela": consistent,
+        "divergentes": divergent,
+        "carencia_aplicavel": applicable,
+        "carencia_mencionada": mentioned,
     }
 
 
@@ -237,7 +336,16 @@ async def measure(args: argparse.Namespace) -> dict[str, object]:
     grouped: dict[str, list[Mapping[str, object]]] = defaultdict(list)
     for row in rows:
         grouped[str(row["conversation_id"])].append(row)
-    sample = random.Random(args.seed).sample(sorted(grouped), args.sample)
+    if args.conversations:
+        sample = args.conversations.split(",")
+    elif args.ineligible:
+        # Oráculo negativo: as 751 que o vendedor humano cotou sem poder.
+        async with httpx.AsyncClient(base_url=args.quote_url) as planos:
+            rules = AcceptanceRules.from_api((await planos.get("/planos")).json())
+        negatives = negative_cases(cases_from_rows(rows), rules)
+        sample = sorted(case.conversation_id for case in negatives)
+    else:
+        sample = random.Random(args.seed).sample(sorted(grouped), args.sample)
     database = Path(args.database)
     for suffix in ("", "-wal", "-shm"):
         Path(f"{database}{suffix}").unlink(missing_ok=True)
@@ -271,6 +379,7 @@ async def measure(args: argparse.Namespace) -> dict[str, object]:
             results = await asyncio.gather(*(bounded(item) for item in sample))
         elapsed = time.monotonic() - started
         used = {item: budgeted.tokens_used(item) for item in sample}
+        verification = await verify_quotes(quote_client, grouped, results)
 
     connection = sqlite3.connect(database)
     try:
@@ -332,6 +441,8 @@ async def measure(args: argparse.Namespace) -> dict[str, object]:
             "roteadas_ao_no": len(sent & routed),
             "eventos_por_fonte": dict(Counter(status for _, status in objection_events)),
         },
+        "apresentaram_preco": sum(item["cotacao"] is not None for item in results),
+        "verificacao_cotacoes": verification,
         "falas_pedindo_arquivo": sum(int(str(item["pedidos_de_arquivo"])) for item in results),
         "turnos_sinteticos": sum(int(str(item["sinteticos"])) for item in results),
         "turnos_totais": sum(int(str(item["turnos"])) for item in results),
@@ -357,6 +468,8 @@ def main() -> None:
     parser.add_argument("--sample", type=int, default=150)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--concurrency", type=int, default=8)
+    parser.add_argument("--conversations", help="ids separados por vírgula, no lugar da amostra")
+    parser.add_argument("--ineligible", action="store_true", help="as 751 do oráculo negativo")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     report = asyncio.run(measure(args))

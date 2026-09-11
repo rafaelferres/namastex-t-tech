@@ -276,6 +276,27 @@ class SQLiteDelivery:
             raise ValueError("Intenção persistida inválida")
         return result
 
+    async def lead_messages(self, conversation_id: str) -> dict[str, OutboundMessage]:
+        """Mensagem ao lead por turno: resposta (`<trace>:reply`) ou aviso de escalação
+        (`<trace>:lead`). Webhook de vendas e fila não são mensagem ao lead."""
+        rows = await run_sqlite(partial(self._lead_rows, conversation_id))
+        messages: dict[str, OutboundMessage] = {}
+        for identifier, payload in rows:
+            message = _unpack(json.loads(payload))
+            if not isinstance(message, OutboundMessage):
+                raise ValueError("Intenção persistida inválida")
+            messages[str(identifier).rsplit(":", 1)[0]] = message
+        return messages
+
+    def _lead_rows(self, conversation_id: str) -> list[tuple[str, str]]:
+        with self._lock:
+            return self._connection.execute(
+                "SELECT id, payload FROM outbound_messages WHERE conversation_id=? "
+                "AND destino='lead' AND (id LIKE '%:reply' OR id LIKE '%:lead') "
+                "ORDER BY criado_em, rowid",
+                (conversation_id,),
+            ).fetchall()
+
     async def record_handoff(
         self, conversation_id: str, decision: HandoffDecision, now: datetime
     ) -> str:

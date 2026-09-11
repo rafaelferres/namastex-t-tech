@@ -15,9 +15,9 @@ class LLMConfig:
     conversation_model: str = "openai/gpt-4.1"
     # Único aceito com imagem e áudio sob schema strict na sondagem da tarefa 10 (D-037).
     media_model: str = "google/gemini-2.5-flash"
-    # Calibrados com medição real (D-034); a tarefa 8 usava 2,0 s, 2,5 s e 4.000 tokens.
-    timeout_seconds: float = 4.5
-    budget_seconds: float = 4.5
+    # Teto no p99.9 por chamada (D-038: 6,9 s em 7.499 chamadas); D-034 usava 4,5 s.
+    timeout_seconds: float = 7.0
+    budget_seconds: float = 7.0
     conversation_token_limit: int = 16000
 
     def __post_init__(self) -> None:
@@ -50,8 +50,8 @@ class LLMConfig:
                 extractor_model=env.get("LLM_EXTRACTOR_MODEL", "openai/gpt-4.1-mini"),
                 conversation_model=env.get("LLM_CONVERSATION_MODEL", "openai/gpt-4.1"),
                 media_model=env.get("LLM_MEDIA_MODEL", "google/gemini-2.5-flash"),
-                timeout_seconds=float(env.get("LLM_TIMEOUT_SECONDS", "4.5")),
-                budget_seconds=float(env.get("LLM_BUDGET_SECONDS", "4.5")),
+                timeout_seconds=float(env.get("LLM_TIMEOUT_SECONDS", "7.0")),
+                budget_seconds=float(env.get("LLM_BUDGET_SECONDS", "7.0")),
                 conversation_token_limit=int(env.get("LLM_CONVERSATION_TOKEN_LIMIT", "16000")),
             )
         except ValueError:

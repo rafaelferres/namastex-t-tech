@@ -5,6 +5,7 @@ import sqlite3
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -14,6 +15,7 @@ from agent.nodes.converse import ConversationInput, Converser
 from agent.nodes.extract import SlotExtractor, capture_private_cep
 from agent.schemas.slots import Slots
 from application.ingest import IngestedTurn, Ingestor
+from application.inspect_conversation import InspectConversation
 from application.inspect_trace import InspectQuoteTrace
 from application.llm import LLMClient
 from application.media import MediaResolver
@@ -33,7 +35,7 @@ from infrastructure.llm.config import LLMConfig
 from infrastructure.llm.http import OpenRouterLLMClient
 from infrastructure.media.resolver import LLMMediaResolver
 from infrastructure.persistence.attempts import SQLiteAttempts
-from infrastructure.persistence.checkpoint import open_checkpointer
+from infrastructure.persistence.checkpoint import open_checkpointer, open_turn_states
 from infrastructure.persistence.connection import connect
 from infrastructure.persistence.conversations import SQLiteConversations
 from infrastructure.persistence.delivery import SQLiteDelivery
@@ -113,6 +115,22 @@ def build_ingestor(
     )
 
 
+@asynccontextmanager
+async def conversation_inspector(path: Path) -> AsyncIterator[InspectConversation]:
+    """Conversa inteira, turno a turno; tudo aberto em modo somente leitura."""
+    connection = sqlite3.connect(
+        path.resolve().as_uri() + "?mode=ro", uri=True, check_same_thread=False
+    )
+    try:
+        async with open_turn_states(path) as states:
+            delivery = SQLiteDelivery(connection)
+            yield InspectConversation(
+                states, SQLiteAttempts(connection), SQLiteTurnEvents(connection), delivery, delivery
+            )
+    finally:
+        connection.close()
+
+
 @contextmanager
 def trace_inspector(path: Path) -> Iterator[InspectQuoteTrace]:
     connection = sqlite3.connect(
@@ -179,6 +197,9 @@ async def open_sales_stack(
     after_reply: Callable[[str], None] | None = None,
     verify: bool = True,
     media: LLMMediaResolver | None = None,
+    # Janela de atendimento do WhatsApp: passadas 24 h sem mensagem do lead, a conversa
+    # não recebe mais texto livre; os slots saem com ela (D-038).
+    retention: timedelta = timedelta(hours=24),
 ) -> AsyncIterator[SalesStack]:
     """Composição única do agente; uma conexão SQLite por papel, no mesmo arquivo."""
     conversations, outbox, trace, cache, events, private = (
@@ -246,7 +267,8 @@ async def open_sales_stack(
                 private_slots=slots,
                 recorder=turn_events,
             )
-            session = SalesSession(graph, delivery, clock, closer=slots)
+            session = SalesSession(graph, delivery, clock, closer=slots, retention=retention)
+            await session.purge()  # na partida; a cada turno, o próprio consume purga
 
             async def consume(turn: IngestedTurn) -> None:
                 await session.consume(turn)

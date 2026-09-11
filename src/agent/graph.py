@@ -60,10 +60,11 @@ from infrastructure.privacy import PrivacyRedactor
 
 @dataclass(frozen=True, slots=True)
 class TurnConfig:
-    # Calibrado com medição real (D-034): tetos acima do p99 de extração e fala.
-    budget_seconds: float = 10.0
-    extraction_seconds: float = 3.5
-    conversation_seconds: float = 4.5
+    # D-038: tetos de LLM no p99.9 por chamada, com um retry; o turno comporta o
+    # caminho no p99.9 de cada etapa (7 + 7 + 3,5 s) e o retry usa o que sobra.
+    budget_seconds: float = 18.0
+    extraction_seconds: float = 7.0
+    conversation_seconds: float = 7.0
     quote_seconds: float = 3.5
 
     def __post_init__(self) -> None:
@@ -310,6 +311,25 @@ class SalesGraph:
         detail = getattr(error, "detalhe", None) or type(error).__name__
         self._event(state, f"{node}_falha", type(error).__name__, 0, detail)
 
+    async def _generate[T](
+        self, state: TurnState, node: str, ceiling: float, call: Callable[[float], Awaitable[T]]
+    ) -> T:
+        """Geração não tem efeito colateral: a chamada que estoura é refeita uma vez (D-038).
+
+        Cada tentativa tem o teto da etapa e nunca passa do prazo do turno.
+        """
+        retried = False
+        while True:
+            budget = min(self._remaining(state), ceiling)
+            try:
+                async with asyncio.timeout(budget):
+                    return await call(budget)
+            except (LLMUnavailable, TimeoutError) as failure:
+                self._external_failure(state, node, failure)
+                if retried or self._remaining(state) <= 0:
+                    raise
+                retried = True
+
     def _update(self, state: TurnState, node: str, start: float, **values: Any) -> TurnState:
         latency = (self._clock.monotonic() - start) * 1000
         self._event(
@@ -332,21 +352,23 @@ class SalesGraph:
         start = self._clock.monotonic()
         slots = Slots.model_validate(state.get("slots", {}))
         try:
-            budget = min(self._remaining(state), self._config.extraction_seconds)
-            async with asyncio.timeout(budget):
-                result = await self._extractor.extract(
+            result = await self._generate(
+                state,
+                "extract",
+                self._config.extraction_seconds,
+                lambda budget: self._extractor.extract(
                     state["entrada"],
                     slots,
                     conversation_id=state["conversation_id"],
                     budget=budget,
                     # Slot transcrito volta como confirmação antes de cotar (ARQUITETURA §5).
                     proveniencia="transcrito" if state.get("transcrito") else "digitado",
-                )
+                ),
+            )
             slots = result.slots
             error = "tokens" if result.tokens_esgotados else None
-        except (LLMUnavailable, TimeoutError) as failure:
+        except (LLMUnavailable, TimeoutError):
             error = "prazo" if self._remaining(state) <= 0 else "llm"
-            self._external_failure(state, "extract", failure)
         except ConfigurationError as failure:
             self._external_failure(state, "extract", failure)
             raise
@@ -473,9 +495,11 @@ class SalesGraph:
     async def _converse(self, state: TurnState) -> TurnState:
         start = self._clock.monotonic()
         try:
-            budget = min(self._remaining(state), self._config.conversation_seconds)
-            async with asyncio.timeout(budget):
-                result = await self._converser.converse(
+            result = await self._generate(
+                state,
+                "converse",
+                self._config.conversation_seconds,
+                lambda budget: self._converser.converse(
                     ConversationInput(
                         state["conversation_id"],
                         self._persona,
@@ -484,7 +508,8 @@ class SalesGraph:
                         state.get("tool_result"),
                     ),
                     budget=budget,
-                )
+                ),
+            )
             if result.violacao is not None:
                 # Guardrail é evento observável com o texto ofensor, nunca exceção.
                 logging.getLogger(__name__).warning("converser_guardrail_violation")
@@ -517,9 +542,8 @@ class SalesGraph:
             )
         except TokenBudgetExceeded:
             error = "tokens"
-        except (LLMUnavailable, TimeoutError) as failure:
+        except (LLMUnavailable, TimeoutError):
             error = "prazo" if self._remaining(state) <= 0 else "llm"
-            self._external_failure(state, "converse", failure)
         return self._update(state, "converse", start, erro=error, status="escalada")
 
     async def _after_converse(self, state: TurnState) -> str:

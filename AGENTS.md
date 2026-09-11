@@ -198,7 +198,7 @@ aproximado, e precisa de `abs()`.
 ### `sender_name` não é identidade
 
 336 nomes distintos para 2.500 conversas. "Joao Gomes" aparece em 17 conversas que
-são pessoas diferentes (idades e veículos distintos). Os CPFs, esses, são 2.500
+são pessoas diferentes (17 veículos distintos). Os CPFs, esses, são 2.500
 distintos sem repetição.
 
 Chavear lead por nome funde até 17 pessoas em um registro só.

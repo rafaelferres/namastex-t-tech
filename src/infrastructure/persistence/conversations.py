@@ -86,7 +86,9 @@ class SQLiteConversations:
             self._connection.execute(
                 "INSERT INTO conversations (id, lead_id, status, iniciada_em, atualizada_em) "
                 "VALUES (?, ?, 'ativa', ?, ?) ON CONFLICT(id) "
-                "DO UPDATE SET atualizada_em=excluded.atualizada_em",
+                # Lead que volta reabre: sem isso a conversa sairia da purga por inatividade.
+                "DO UPDATE SET atualizada_em=excluded.atualizada_em, "
+                "status=CASE WHEN status='encerrada' THEN 'ativa' ELSE status END",
                 (message.conversation_id, lead_id, now, now),
             )
             row = self._connection.execute(
@@ -167,6 +169,20 @@ class SQLiteConversations:
                 "WHERE id=?",
                 (now, conversation_id),
             )
+
+    async def stale(self, before: datetime) -> tuple[str, ...]:
+        """Conversas abertas sem mensagem desde `before`: o lead abandonou (D-038)."""
+        return await run_sqlite(partial(self._stale, before.isoformat()))
+
+    def _stale(self, before: str) -> tuple[str, ...]:
+        # ponytail: varredura sem índice por turno; índice em atualizada_em se a tabela crescer.
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT id FROM conversations WHERE status<>'encerrada' AND atualizada_em<? "
+                "ORDER BY id",
+                (before,),
+            ).fetchall()
+        return tuple(row[0] for row in rows)
 
     async def messages(self, conversation_id: str) -> tuple[InboundMessage, ...]:
         return await run_sqlite(partial(self._messages, conversation_id))

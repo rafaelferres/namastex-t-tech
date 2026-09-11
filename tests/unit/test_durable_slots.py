@@ -6,7 +6,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -48,8 +48,9 @@ async def stack_for(
     *,
     speech: ConversationResult,
     age: int = 30,
+    clock: FakeClock | None = None,
 ) -> AsyncIterator[SalesStack]:
-    clock = FakeClock()
+    clock = clock or FakeClock()
 
     async def sleep(delay: float) -> None:
         if delay >= 1:
@@ -81,22 +82,22 @@ async def stack_for(
             yield stack
 
 
-async def say(stack: SalesStack, text: str, index: int) -> object:
+async def say(stack: SalesStack, text: str, index: int, conversation: str = "conv-1") -> object:
     await stack.ingestor.ingest(
-        InboundMessage("whatsapp", "conv-1", "5511999990000", "text", text, f"w{index}", index)
+        InboundMessage("whatsapp", conversation, "5511999990000", "text", text, f"w{index}", index)
     )
     await stack.ingestor.wait_idle()
-    return stack.session.latest_response("conv-1")
+    return stack.session.latest_response(conversation)
 
 
-def stored(path: Path) -> tuple[tuple[str, str], int, list[str]]:
+def stored(path: Path, conversation: str = "conv-1") -> tuple[tuple[str, str], int, list[str]]:
     connection = connect(path)
     try:
         row = connection.execute(
-            "SELECT slots, status FROM conversations WHERE id='conv-1'"
+            "SELECT slots, status FROM conversations WHERE id=?", (conversation,)
         ).fetchone()
         checkpoints = connection.execute(
-            "SELECT count(*) FROM checkpoints WHERE thread_id='conv-1'"
+            "SELECT count(*) FROM checkpoints WHERE thread_id=?", (conversation,)
         ).fetchone()[0]
         bodies = [r[0] for r in connection.execute("SELECT corpo FROM messages").fetchall()]
     finally:
@@ -147,6 +148,60 @@ async def test_final_refusal_closes_and_purges(tmp_path, plans_payload, quote_pa
     assert (json.loads(slots_json), status) == ({}, "encerrada")
     assert checkpoints == 0
     assert quotes == []
+
+
+ASK = ConversationResult("Qual plano você prefere?", None)
+IDLE = timedelta(hours=25)  # além da retenção padrão de 24 h
+
+
+@pytest.mark.asyncio
+async def test_abandoned_conversation_is_purged_at_startup(tmp_path, plans_payload, quote_payload):
+    path, clock = tmp_path / "agent.sqlite", FakeClock()
+    async with stack_for(path, plans_payload, quote_payload, [], speech=ASK, clock=clock) as stack:
+        await say(stack, "CEP 01310-100", 0)
+    clock.instant += IDLE
+    async with stack_for(path, plans_payload, quote_payload, [], speech=ASK, clock=clock):
+        pass
+    (slots_json, status), checkpoints, _ = stored(path)
+    assert (json.loads(slots_json), status) == ({}, "encerrada")
+    assert checkpoints == 0
+
+
+@pytest.mark.asyncio
+async def test_any_turn_purges_abandoned_conversations_but_not_recent_ones(
+    tmp_path, plans_payload, quote_payload
+):
+    path, clock = tmp_path / "agent.sqlite", FakeClock()
+    async with stack_for(path, plans_payload, quote_payload, [], speech=ASK, clock=clock) as stack:
+        await say(stack, "CEP 01310-100", 0)
+        clock.instant += IDLE
+        await say(stack, "CEP 20040-002", 1, conversation="conv-2")
+    (slots_json, status), checkpoints, _ = stored(path)
+    assert (json.loads(slots_json), status, checkpoints) == ({}, "encerrada", 0)
+    (slots_json, status), checkpoints, _ = stored(path, "conv-2")
+    assert (json.loads(slots_json), status) == ({"cep": "20040002"}, "ativa")
+    assert checkpoints > 0
+
+
+@pytest.mark.asyncio
+async def test_returning_lead_reopens_so_retention_applies_again(tmp_path):
+    connection = connect(tmp_path / "agent.sqlite")
+    start = datetime(2026, 9, 11)
+
+    def message(conversation: str, index: int) -> InboundMessage:
+        return InboundMessage("replay", conversation, conversation, "text", "", f"m{index}", index)
+
+    try:
+        store = SQLiteConversations(connection)
+        await store.ensure(message("conv-1", 0), None, start)
+        await store.ensure(message("conv-2", 1), None, start + timedelta(hours=10))
+        assert await store.stale(start + timedelta(hours=5)) == ("conv-1",)
+        await store.close("conv-1", start + timedelta(hours=6))
+        assert await store.stale(start + timedelta(hours=7)) == ()
+        await store.ensure(message("conv-1", 2), None, start + timedelta(hours=20))
+        assert await store.stale(start + timedelta(hours=21)) == ("conv-1", "conv-2")
+    finally:
+        connection.close()
 
 
 @pytest.mark.asyncio
