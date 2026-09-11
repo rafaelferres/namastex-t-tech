@@ -1,16 +1,29 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import sqlite3
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from pathlib import Path
 
 import httpx
 
-from application.ports import AcceptanceRulesProvider, Clock, QuoteCache, QuoteProvider
+from application.inspect_trace import InspectQuoteTrace
+from application.ports import (
+    AcceptanceRulesProvider,
+    AttemptRecorder,
+    Clock,
+    QuoteCache,
+    QuoteProvider,
+)
+from application.tracing import CorrelationProvider
+from infrastructure.persistence.attempts import SQLiteAttempts
 from infrastructure.quote.cache import CachingQuoteProvider
 from infrastructure.quote.config import QuoteConfig
 from infrastructure.quote.guard import EligibilityGuardProvider
 from infrastructure.quote.hedge import HedgingQuoteProvider
 from infrastructure.quote.http import HttpQuoteProvider
 from infrastructure.quote.retry import RetryingQuoteProvider
+from infrastructure.quote.trace import ApplicationTrace, WireTrace
 
 
 def build_quote_provider(
@@ -21,11 +34,16 @@ def build_quote_provider(
     clock: Clock,
     sleep: Callable[[float], Awaitable[None]],
     rng: Callable[[], float],
+    recorder: AttemptRecorder,
+    correlation: CorrelationProvider,
     config: QuoteConfig | None = None,
 ) -> QuoteProvider:
     config = config if config is not None else QuoteConfig()
-    http = HttpQuoteProvider(client, timeout=config.timeout, clock=clock)
-    hedge = HedgingQuoteProvider(http, hedge_delay=config.hedge_delay, sleep=sleep)
+    http = HttpQuoteProvider(
+        client, timeout=config.timeout, clock=clock, observe_status=correlation.observe_http
+    )
+    wire = WireTrace(http, recorder, correlation, clock)
+    hedge = HedgingQuoteProvider(wire, hedge_delay=config.hedge_delay, sleep=sleep)
     retry = RetryingQuoteProvider(
         hedge,
         max_attempts=config.max_attempts,
@@ -38,4 +56,16 @@ def build_quote_provider(
         contract_threshold=config.contract_threshold,
     )
     cached = CachingQuoteProvider(retry, cache, clock)
-    return EligibilityGuardProvider(cached, rules, clock)
+    guard = EligibilityGuardProvider(cached, rules, clock)
+    return ApplicationTrace(guard, recorder, correlation, clock)
+
+
+@contextmanager
+def trace_inspector(path: Path) -> Iterator[InspectQuoteTrace]:
+    connection = sqlite3.connect(
+        path.resolve().as_uri() + "?mode=ro", uri=True, check_same_thread=False
+    )
+    try:
+        yield InspectQuoteTrace(SQLiteAttempts(connection))
+    finally:
+        connection.close()

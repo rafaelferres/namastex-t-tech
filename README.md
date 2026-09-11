@@ -166,7 +166,7 @@ Primeiro, o cache é exato, não uma aproximação. Chave = os cinco slots
 normalizados + o dia de referência, TTL até meia-noite. Recusas também são
 cacheadas.
 
-Segundo, dá para disparar uma segunda chamada após ~1,5s e ficar com a primeira
+Segundo, dá para disparar uma segunda chamada após 100 ms (p99 medido: 44,73 ms) e ficar com a primeira
 que voltar. Como 10% das chamadas dormem 8 segundos, isso elimina quase toda a
 cauda de latência por um custo trivial — e é seguro justamente porque a chamada
 não tem efeito colateral.
@@ -309,7 +309,7 @@ payload da API.
 ### A cadeia de cotação
 
 ```
-Guard → Cache → Retry → Hedge → Trace → Http
+ApplicationTrace → Guard → Cache → Retry → Hedge → WireTrace → Http
 ```
 
 Cada camada é um decorator que implementa `QuoteProvider`. Comportamento novo
@@ -386,13 +386,14 @@ quote_attempts (
 -- origem ∈ api | cache | regra_local
 ```
 
-Uma linha por chamada física. `trace_id` propaga por toda a cadeia; `fingerprint`
+Uma linha por chamada física e uma por desfecho lógico (tentativa zero).
+`trace_id` propaga por toda a cadeia; `fingerprint`
 é o hash dos cinco slots + dia de referência, e liga tentativas da mesma cotação.
 
 Para inspecionar uma conversa inteira:
 
 ```bash
-uv run python -m interfaces.trace conv_00013
+uv run python -m interfaces.trace <trace_id> --database autoseguro.sqlite
 ```
 
 ---
@@ -485,35 +486,64 @@ QUOTE_FAILURE_RATE=1.0 docker compose up   # força a escada até o N3
 
 Resiliência medida com os decorators reais e uma folha simulada, sem rede:
 
-| Configuração | Orçamento de cotação | Falhas medidas | Chamadas físicas |
-|---|---|---|---|
-| Três tentativas, sem hedge | Sem corte por tempo (20 s não vinculantes) | **2,72% — 272/10.000** | 13.822 |
-| Três tentativas, com hedge | Sem corte por tempo (20 s não vinculantes) | **1,18% — 118/10.000** | 14.036 |
-| Três tentativas, sem hedge | Produção: **3,5 s** | **3,29% — 329/10.000** | 13.738 |
-| Três tentativas, com hedge | Produção: **3,5 s** | **2,43% — 243/10.000** | 13.857 |
+| Configuração | Orçamento | Antes (Tarefa 4) | Depois (Tarefa 5) |
+|---|---|---:|---:|
+| Sem hedge, três tentativas | Sem corte por tempo | **2,72%** (272/10.000) | **2,72%** (272/10.000) |
+| Com hedge, três tentativas | Sem corte por tempo | **1,18%** (118/10.000) | **1,18%** (118/10.000) |
+| Sem hedge, três tentativas | Produção: 3,5 s | **3,29%** (329/10.000) | **3,29%** (329/10.000) |
+| Com hedge, três tentativas | Produção: 3,5 s | **2,43%** (243/10.000) | **1,27%** (127/10.000) |
 
-Seed 42 para a folha (20% de falha imediata, 10% de resposta lenta e 70% de sucesso),
-seed 2026 para jitter, timeout virtual de 2 s e janela de hedge de 1,5 s.
-Sucessos são imediatos no duplo. O cenário de 20 s não corta nenhuma tentativa:
-três tentativas hedgeadas levam no máximo 10,8 s com esses delays. Tolerância do
-portão: 0,5 ponto percentual; referência teórica nos cenários sem corte e baseline
-medida nos cenários de produção. Reprodução:
-`uv run pytest tests/unit/test_residual_rate.py -q -s`.
+Os oito cenários são reexecutados com seed 42 na folha e 2026 no jitter. A folha
+sorteia 20% de falha imediata, 10% de lentidão truncada pelo timeout de 2 s e 70%
+de sucesso imediato. Vinte segundos representam ausência de corte por orçamento:
+o máximo possível é 10,8 s antes e 6,34 s depois. Três tentativas em todos os casos.
+Tolerância de 0,5 ponto percentual sobre teoria sem corte e baseline medida com
+corte. A simulação mantém sucesso instantâneo para comparar apenas a recalibração;
+não é previsão de throughput nem inclui carga de catálogo/cache/persistência.
+Reprodução: `uv run pytest tests/unit/test_residual_rate.py -q -s`.
 
-O limite de produção aumenta a falha com hedge em **1,25 ponto percentual**;
-a taxa de 1,18% não descreve produção. A melhora sobre a cadeia sem hedge continua
-existindo (3,29% → 2,43%). Mantidos três tentativas e timeout de 2 s até medir a
-latência dos sucessos reais: reduzir timeout apenas neste duplo favoreceria
-artificialmente o resultado. `QuoteConfig` permite alterar orçamento, timeout,
-janela e tentativas; `PRODUCTION_QUOTE_BUDGET` define o padrão de 3,5 s (D-008).
+**Calibração real:** 500 POSTs sequenciais após 20 de aquecimento, HTTP keep-alive,
+API do desafio em container separado na porta localhost:18000, com
+`QUOTE_FAILURE_RATE=0` e `QUOTE_SLOW_RATE=0`, cliente em WSL. Mediana **15,88 ms**,
+p95 **29,17 ms**, p99 **44,73 ms**, máximo **98,96 ms**. Percentis por nearest rank.
+A distribuição bruta está em [task5-fast-path.json](docs/measurements/task5-fast-path.json).
+Não confundir este máximo observado com teto garantido em outra máquina ou sob carga.
 
-A cadeia implementada é `Guard → Cache → Retry → Hedge → Http`, montada por
-`infrastructure.wiring.build_quote_provider`. O chamador injeta cliente HTTP,
-cache SQLite, regras, relógio, sleep e RNG, e controla o fechamento dos recursos.
-`persistence.connection.connect` configura SQLite e aplica apenas `quote_cache`.
-Acertos trazem `origem=cache`; recusas locais trazem `origem=regra_local`.
-Os 3,5 s limitam Retry/Hedge/HTTP, não o carregamento de regras ou I/O do cache;
-a propagação do deadline do turno inteiro será responsabilidade da aplicação.
+A janela caiu de 1,5 s para **100 ms**, mais de duas vezes o p99 medido. O jitter
+passou de exponencial (tetos 100/200 ms nas duas pausas) para **uniforme 0–20 ms
+em cada pausa**, configurando base_delay=max_delay=0.02. Esperar mais não recupera
+um serviço que sorteia falhas independentes. QuoteConfig mantém todos os valores
+substituíveis; a implementação genérica de retry preserva compatibilidade (D-012).
+
+Restam **0,09 ponto percentual** entre 1,18% sem corte e 1,27% com 3,5 s.
+O tempo restante é consumido por combinações de chamadas lentas cujo resgate também
+falha: cada rodada pode chegar a 2,1 s. Sem hedge, dois timeouts de 2 s já ultrapassam
+3,5 s, então reduzir só o jitter não muda seus 3,29%. Chamadas físicas antes/depois:
+13.822/13.822, 14.036/14.036, 13.738/13.738 e 13.857/14.027, na ordem da tabela.
+
+A cadeia completa é montada em `infrastructure.wiring.build_quote_provider`.
+O chamador injeta cliente, cache, regras, relógio, sleep, RNG, correlação e recorder.
+`BufferedAttemptRecorder(SQLiteAttempts(conexao_trace).record)` entrega eventos
+sem bloquear a cotação; use conexão de trace distinta da conexão do cache, no mesmo
+arquivo SQLite. Chame `await recorder.flush()` antes de inspecionar ou fechar.
+A fila comporta 1.024 eventos pendentes e descarta com aviso se lotar; queda abrupta
+pode perder eventos pendentes. Nenhum payload ou mensagem de exceção é registrado.
+Os 3,5 s cobrem Retry/Hedge/HTTP; deadline do turno completo ainda precisa incluir
+catálogo e cache. Trace não entra na disputa desse orçamento (D-014).
+
+Para medir e reproduzir uma execução real, com a API rápida já iniciada:
+
+```bash
+uv sync
+uv run python scripts/measure_quote_latency.py --url http://127.0.0.1:18000 --samples 500
+uv run python scripts/demo_quote_trace.py --url http://127.0.0.1:18000 --database autoseguro.sqlite
+uv run python -m interfaces.trace <trace_id_impresso> --database autoseguro.sqlite
+```
+
+O demo usa perfil sintético; num banco novo, imprime ids de uma resolução API e
+uma de cache. Em banco reutilizado, ambas podem vir do cache. A inspeção é somente
+leitura, não cria banco ausente. Exemplo realmente executado:
+[task5-real-trace.txt](docs/measurements/task5-real-trace.txt).
 
 ---
 

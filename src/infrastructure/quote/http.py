@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
 
@@ -24,10 +26,18 @@ def _decode(response: httpx.Response) -> object:
 
 
 class HttpQuoteProvider:
-    def __init__(self, client: httpx.AsyncClient, timeout: float, clock: Clock) -> None:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        timeout: float,
+        clock: Clock,
+        *,
+        observe_status: Callable[[int], None] | None = None,
+    ) -> None:
         self._client = client
         self._timeout = timeout
         self._clock = clock
+        self._observe_status = observe_status
 
     async def quote(self, req: QuoteRequest) -> QuoteOutcome:
         payload = req.to_payload()
@@ -43,6 +53,11 @@ class HttpQuoteProvider:
             raise QuoteUnavailable(ano_normalizado=ano_normalizado) from None
 
         status = response.status_code
+        if self._observe_status is not None:
+            try:
+                self._observe_status(status)
+            except Exception:
+                logging.getLogger(__name__).warning("http_observation_failed")
         body = _decode(response)
         if status == 200:
             try:

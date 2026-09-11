@@ -175,3 +175,64 @@ None também deixa passar. CancelledError não é capturado. Consumidores direto
 do catálogo continuam vendo erro de contrato; erros da cotação não são engolidos.
 **Consequência:** guard permanece otimização. Logs identificam falha da dependência
 sem PII; diagnóstico detalhado seguro fica para a instrumentação futura.
+
+## D-012 — Hedge calibrado e jitter constante para falhas independentes
+**Data:** 2026-09-11
+**Contexto:** D-008 mostrou 2,43% de falha com budget de 3,5 s contra 1,18% sem
+corte. A API sorteia falhas independentes; não há recuperação por esperar mais.
+**Alternativas:** manter janela 1,5 s; encurtar timeout; calibrar hedge no caminho
+rápido e eliminar o crescimento do backoff.
+**Decisão:** 500 POSTs sequenciais, mais 20 warmup, cliente httpx keep-alive no WSL,
+API real em container separado na porta 18000, FAILURE_RATE=SLOW_RATE=0: mediana
+15,8802 ms, p95 29,1736 ms, p99 44,7299 ms, máximo 98,9636 ms. Percentis nearest rank;
+amostras em docs/measurements/task5-fast-path.json. Janela 100 ms (>2×p99) e jitter
+uniforme 0–20 ms por pausa, sem crescimento (base_delay=max_delay=0.02). Timeout
+permanece 2 s e máximo três tentativas. Isso supera a configuração de D-008.
+**Consequência:** esperando mais não aumenta a chance de sucesso, apenas consome
+budget. O retry genérico mantém compatibilidade exponencial para configurações
+explícitas, mas ela foi descartada na política padrão de produção. A janela é
+calibração local, não garantia de cauda sob carga ou em outro ambiente.
+
+Reexecução dos oito cenários, 10.000 amostras cada, seeds 42/2026: antes/depois,
+sem hedge e sem corte 2,72%/2,72%; com hedge e sem corte 1,18%/1,18%; sem hedge
+com 3,5 s 3,29%/3,29%; com hedge com 3,5 s 2,43%/1,27%. Restam 0,09 ponto
+percentual: pares de chamadas lentas/falhas ainda podem consumir 2,1 s por rodada.
+Sem hedge, dois timeouts somam 4 s. O duplo continua com sucesso instantâneo
+para comparar a configuração, não prever performance da cadeia completa.
+
+## D-013 — Correlação por contexto, sequência física e desfecho explícito
+**Data:** 2026-09-11
+**Contexto:** WireTrace não observa guard/cache; status HTTP pertence à folha,
+e estado de última resposta no provider misturaria chamadas concorrentes.
+**Alternativas:** adicionar HTTP nos resultados de domínio; hooks globais do
+cliente; callback técnico com observação por contexto. Para níveis de trace,
+coluna adicional ou reservar um valor na sequência existente.
+**Decisão:** ContextCorrelationProvider recebe factory de ids internos, cria sessão
+por resolução e observação distinta por chamada via ContextVars. Tentativa zero
+é desfecho lógico; físicos são 1..N por início. Na topologia sequencial Retry(Hedge),
+sobreposição física identifica hedge. A folha tem callback opcional de status,
+cuja falha é best effort; nenhum status HTTP entra no domínio. Cancelamento gera
+unavailable/CancelledError, HTTP ausente quando não houve resposta; suspeita de
+contrato é sufixo da classe em erro. Não registra motivo, mensagem externa ou payload.
+**Consequência:** consumidores não devem contar tentativa zero como chamada HTTP;
+trocar topologia exige rever detecção de hedge. conversation_id ainda não tem FK,
+pois conversations não existe. A inspeção ordena físicos e apresenta desfecho ao
+final. Ano de normalização vem do calendário local, não do instante convertido em UTC.
+
+## D-014 — Entrega não bloqueante e fila limitada para instrumentação
+**Data:** 2026-09-11
+**Contexto:** revisão reproduziu recusa em 10 ms virando QuoteUnavailable com duas
+chamadas quando o recorder levava 4 s. Aguardar SQLite no WireTrace consumia o
+orçamento e disparava hedge por latência da instrumentação, não da API.
+**Alternativas:** aguardar gravação; timeout curto de escrita; tarefas ilimitadas;
+fila limitada com drenagem explícita pelo dono dos recursos.
+**Decisão:** AttemptRecorder.record passa a ser entrega síncrona não bloqueante;
+BufferedAttemptRecorder recebe sink assíncrono, mantém até 1.024 eventos pendentes
+mais uma escrita ativa e serializa a persistência em background. Ambos os traces
+só submetem eventos. Overflow e falhas de escrita são avisos genéricos, sem PII.
+SQLiteAttempts usa conexão própria; flush aguarda o worker, mesmo ao cancelar,
+antes da inspeção/fechamento. A conexão do cache continua distinta, no mesmo arquivo.
+**Consequência:** cotação não espera persistência de trace. Pode haver perda de
+eventos em overflow ou crash, e leituras anteriores ao flush podem ser parciais.
+O consumidor deve aguardar todos os produtores, drenar e só então fechar conexões.
+Isso é best effort explícito, sem fila durável ou outras tabelas nesta fase.

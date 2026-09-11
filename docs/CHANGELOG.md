@@ -4,6 +4,48 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Added — Tarefa 5, 2026-09-11
+
+- Cadeia instrumentada como ApplicationTrace → Guard → Cache → Retry → Hedge →
+  WireTrace → Http. Cada chamada física recebe sequência, status, HTTP, latência,
+  hedge, normalização e classe de erro; o desfecho lógico registra api, cache ou
+  regra_local. Correlação é isolada entre cotações concorrentes.
+- SQLite acrescenta apenas quote_attempts e índice por trace_id; conversation_id
+  ainda não tem FK. Entrega de eventos é não bloqueante, com fila limitada e
+  drenagem explícita antes de inspeção/fechamento. Erros não expõem payload ou PII.
+- `python -m interfaces.trace <trace_id> --database ...` apresenta tentativas
+  ordenadas e desfecho em texto, usando caso de uso e leitura SQLite somente leitura.
+  Pacotes planos e schema.sql são instalados por uv sync.
+- Scripts de medição e demonstração real ficam em scripts/, fora da suíte.
+  Amostras de latência e saída de inspeção real estão em docs/measurements/.
+
+### Changed — Tarefa 5
+
+- Medição real de 500 chamadas após 20 warmup: mediana 15,88 ms, p95 29,17 ms,
+  p99 44,73 ms e máximo 98,96 ms, API sem falhas/lentidão na porta local 18000.
+- Hedge de 1,5 s para 100 ms; jitter constante 0–20 ms substitui crescimento
+  exponencial na configuração de produção. Mantidos timeout de 2 s e três tentativas.
+- Em 10.000 execuções por cenário, antes/depois: sem hedge/sem corte 2,72%/2,72%;
+  com hedge/sem corte 1,18%/1,18%; sem hedge/3,5 s 3,29%/3,29%; com hedge/3,5 s
+  2,43%/1,27%. A diferença restante de 0,09 ponto percentual vem de combinações
+  de lentidão que ainda consomem mais de uma rodada de timeout.
+
+### Validation — Tarefa 5
+
+- **285 testes passaram em 11,85 s**, sem rede, Docker ou sleep real; os scripts
+  de medição/demonstração foram executados separadamente contra a API real.
+  Ruff limpo em src/tests/scripts; mypy sem erros em 32 arquivos de código.
+- Revisão identificou recusa rápida virando indisponibilidade por espera do
+  recorder. Corrigido com entrega não bloqueante: sink de 4 s não altera recusa
+  em 10 ms nem dispara hedge extra. Fila cheia, falha e cancelamento de flush cobertos.
+- Metadado de ano em chamada cancelada usa calendário da API mesmo na virada
+  UTC; regressão reproduzida antes da correção. Revisão final sem defeitos importantes.
+- Inspeção em outro processo confirmou uma cotação real com HTTP 200 e uma
+  resolução posterior de cache sem tentativa física. A fila foi drenada antes.
+- Demais tabelas, grafo, prompts, adapters de atendimento e console continuam fora.
+  Deadline do turno completo ainda precisa incluir catálogo e cache. Overflow
+  ou encerramento abrupto podem perder eventos de trace pendentes.
+
 ### Added — Tarefa 4, 2026-09-11
 
 - Cadeia Guard → Cache → Retry → Hedge → Http composta em um único wiring,

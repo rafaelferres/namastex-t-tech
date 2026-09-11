@@ -47,11 +47,13 @@ class ProbabilisticApi:
         (True, PRODUCTION_QUOTE_BUDGET, 0.0243),
     ],
 )
+@pytest.mark.parametrize("calibration", ["previous", "current"])
 def test_seeded_residual_failure_rate(
     quote_payload: dict[str, Any],
     use_hedge: bool,
     expected: float,
     budget: float,
+    calibration: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def forbidden(*args: object, **kwargs: object) -> None:
@@ -59,18 +61,25 @@ def test_seeded_residual_failure_rate(
 
     monkeypatch.setattr(asyncio, "sleep", forbidden)
     monkeypatch.setattr(time, "sleep", forbidden)
+    config = (
+        QuoteConfig(hedge_delay=1.5, base_delay=0.1, max_delay=0.4)
+        if calibration == "previous"
+        else CONFIG
+    )
+    if calibration == "current" and use_hedge and budget == PRODUCTION_QUOTE_BUDGET:
+        expected = 0.0127
     with virtual_time() as timeline:
         leaf = ProbabilisticApi(timeline, Quote.from_api(quote_payload))
         inner: QuoteProvider = leaf
         if use_hedge:
             inner = HedgingQuoteProvider(
-                inner, hedge_delay=CONFIG.hedge_delay, sleep=timeline.sleep
+                inner, hedge_delay=config.hedge_delay, sleep=timeline.sleep
             )
         chain = RetryingQuoteProvider(
             inner,
-            max_attempts=CONFIG.max_attempts,
-            base_delay=CONFIG.base_delay,
-            max_delay=CONFIG.max_delay,
+            max_attempts=config.max_attempts,
+            base_delay=config.base_delay,
+            max_delay=config.max_delay,
             budget=budget,
             sleep=timeline.sleep,
             rng=random.Random(2026).random,
@@ -92,7 +101,7 @@ def test_seeded_residual_failure_rate(
         failures = timeline.run(trials())
     rate = failures / TRIALS
     print(
-        f"hedge={use_hedge}, budget={budget}: {failures}/{TRIALS} = {rate:.4%}; "
+        f"{calibration}, hedge={use_hedge}, budget={budget}: {failures}/{TRIALS} = {rate:.4%}; "
         f"physical_calls={leaf.calls}"
     )
     # Unbounded: theoretical reference. Production: measured regression baseline (D-008).

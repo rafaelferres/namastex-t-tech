@@ -12,3 +12,8 @@ wheels/
 # Agents
 .agents
 .claude
+
+# Dados locais de execução
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from time import monotonic
-from typing import Literal, Protocol
+from typing import Protocol
 
+from application.tracing import QuoteAttempt
 from domain.acceptance import AcceptanceRules
 from domain.quote import QuoteOutcome, QuoteRequest
 
@@ -25,18 +26,9 @@ class AcceptanceRulesProvider(Protocol):
 
 
 class AttemptRecorder(Protocol):
-    async def record(
-        self,
-        *,
-        trace_id: str,
-        conversation_id: str,
-        fingerprint: str,
-        tentativa: int,
-        status: Literal["quoted", "declined", "unavailable", "contract_error"],
-        http_status: int | None,
-        latencia_ms: int,
-        origem: Literal["api", "cache", "regra_local"],
-    ) -> None: ...
+    """Entrega não bloqueante; persistência e drenagem pertencem ao adapter."""
+
+    def record(self, attempt: QuoteAttempt) -> None: ...
 
 
 class Clock(Protocol):

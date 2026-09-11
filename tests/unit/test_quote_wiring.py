@@ -9,11 +9,13 @@ from unittest.mock import AsyncMock, Mock
 import httpx
 import pytest
 
+from application.tracing import Correlation
 from domain.acceptance import AcceptanceRules
 from domain.quote import Declined, Quote, QuoteRequest, QuoteUnavailable
 from infrastructure.persistence.connection import connect
 from infrastructure.persistence.quote_cache import SQLiteQuoteCache
 from infrastructure.quote.config import QuoteConfig
+from infrastructure.tracing.correlation import ContextCorrelationProvider
 from infrastructure.wiring import build_quote_provider
 from tests.virtual_time import virtual_time
 
@@ -57,6 +59,8 @@ async def test_complete_chain(
             transport=httpx.MockTransport(handler), base_url="https://test"
         ) as client:
             provider = build_quote_provider(
+                recorder=Mock(),
+                correlation=ContextCorrelationProvider(lambda: Correlation("test", "conv")),
                 client=client,
                 cache=cache,
                 rules=AsyncMock(current=AsyncMock(return_value=rules)),
@@ -119,6 +123,8 @@ def test_wiring_enforces_configured_deadline(budget: float) -> None:
             ) as client:
                 cache = AsyncMock(get=AsyncMock(return_value=None))
                 provider = build_quote_provider(
+                    recorder=Mock(),
+                    correlation=ContextCorrelationProvider(lambda: Correlation("test", "conv")),
                     client=client,
                     cache=cache,
                     rules=AsyncMock(current=AsyncMock(return_value=None)),
