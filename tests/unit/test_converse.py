@@ -91,3 +91,53 @@ async def test_free_speech_cannot_publish_numbers(text):
 def test_decline_and_unavailable_keep_distinct_projection():
     assert project_quote(Declined("idade fora"), FACTS)["status"] == "recusado"
     assert project_quote(QuoteUnavailable(), FACTS)["status"] == "indisponivel"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Custa onze por mês.",
+        "Você paga doze.",
+        "Sai por quinze.",
+        "O pagamento será gratuito.",
+        "Pode parcelar em duas vezes.",
+        "Fica por dezoito mensais.",
+        "O custo é baixo.",
+    ],
+)
+async def test_financial_assertions_are_rejected_without_currency_or_digits(text):
+    with pytest.raises(LLMContractError):
+        await Converser(client(json.dumps({"texto": text, "escalacao": None}))).converse(
+            ConversationInput("c", "", (), (FACTS,))
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "financial_history",
+    ["Fica 313,80 por mês.", "313.80", "Custa onze.", "Pode pagar doze."],
+)
+async def test_history_cannot_forward_amounts_without_currency_labels(financial_history):
+    leaf = client()
+    await Converser(leaf).converse(
+        ConversationInput("c", "", (financial_history, "Quero cobertura para roubo."), (FACTS,))
+    )
+    context = json.loads(leaf.complete.call_args.args[0].user)
+    assert context["historico"] == ["Quero cobertura para roubo."]
+
+
+@pytest.mark.asyncio
+async def test_new_turn_can_request_other_plan_after_previous_quote():
+    leaf = client("", (LLMToolCall("cotar", {"plano_id": "premium"}),))
+    result = await Converser(leaf).converse(
+        ConversationInput(
+            "c",
+            "",
+            ("Quero o premium agora.",),
+            (FACTS,),
+            {"status": "cotado", "nome_plano": "Básico", "coberturas": ["roubo"], "carencia": True},
+        )
+    )
+    assert result.plano_id == "premium"
+    assert leaf.complete.call_args.args[0].tools[0].name == "cotar"

@@ -122,3 +122,49 @@ async def test_untrusted_tool_arguments_are_redacted_before_capture(tmp_path):
     req = replace(request(), tools=(TOOL,))
     await RecordedLLMClient(leaf, tmp_path, "record", {req.role: "m"}).complete(req)
     assert "private@example.com" not in next(tmp_path.glob("*.json")).read_text()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cep", [12345678, 1310100])
+async def test_numeric_pii_tool_arguments_record_and_replay_as_valid_json(tmp_path, cep):
+    from application.llm import LLMResponse
+
+    arguments = {
+        "plano_id": "basico",
+        "cep": cep,
+        "nested": [{"cep": cep, "email": "private@example.com"}, 12345678, True, None, 18],
+    }
+    response = LLMResponse("", "m", 1, 1, None, 0, (LLMToolCall("cotar", arguments),))
+    leaf = AsyncMock(complete=AsyncMock(return_value=response))
+    req = replace(request(), tools=(TOOL,))
+    models = {req.role: "m"}
+    recorded = await RecordedLLMClient(leaf, tmp_path, "record", models).complete(req)
+    assert recorded.tool_calls[0].arguments == {
+        "plano_id": "basico",
+        "cep": "[CEP]",
+        "nested": [{"cep": "[CEP]", "email": "[EMAIL]"}, "[CEP]", True, None, 18],
+    }
+    fixture = next(tmp_path.glob("*.json")).read_text()
+    assert str(cep) not in fixture
+    assert "private@example.com" not in fixture
+    assert await RecordedLLMClient(None, tmp_path, "replay", models).complete(req) == recorded
+
+
+@pytest.mark.asyncio
+async def test_recorded_numeric_extra_argument_still_reaches_converser_contract_error(tmp_path):
+    from agent.nodes.converse import ConversationInput, Converser
+    from application.llm import LLMResponse, LLMRole
+
+    response = LLMResponse(
+        "",
+        "m",
+        1,
+        1,
+        None,
+        0,
+        (LLMToolCall("cotar", {"plano_id": "basico", "cep": 12345678}),),
+    )
+    leaf = AsyncMock(complete=AsyncMock(return_value=response))
+    recorder = RecordedLLMClient(leaf, tmp_path, "record", {LLMRole.CONVERSATION: "m"})
+    with pytest.raises(LLMContractError):
+        await Converser(recorder).converse(ConversationInput("c", "", (), ()))

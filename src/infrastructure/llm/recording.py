@@ -109,9 +109,7 @@ class RecordedLLMClient:
                 tool_calls=tuple(
                     LLMToolCall(
                         self._privacy.redact(call.name),
-                        json.loads(
-                            self._privacy.redact(json.dumps(call.arguments, ensure_ascii=False))
-                        ),
+                        self._redact_arguments(call.arguments),
                     )
                     for call in response.tool_calls
                 ),
@@ -120,6 +118,30 @@ class RecordedLLMClient:
             payload["cost"] = str(safe.cost) if safe.cost is not None else None
             self._save(path, {"digest": digest, "response": payload})
             return safe
+
+    def _redact_arguments(self, arguments: dict[str, object]) -> dict[str, object]:
+        return {
+            self._privacy.redact(key): self._redact_value(value, field_name=key)
+            for key, value in arguments.items()
+        }
+
+    def _redact_value(self, value: object, *, field_name: str = "") -> object:
+        # Numeric CEPs may have lost a leading zero before reaching this boundary.
+        if field_name.casefold() == "cep" and value is not None:
+            return "[CEP]"
+        if isinstance(value, dict):
+            return self._redact_arguments(value)
+        if isinstance(value, list):
+            return [self._redact_value(item) for item in value]
+        if isinstance(value, str):
+            return self._privacy.redact(value)
+        if type(value) in (int, float):
+            text = str(value)
+            redacted = self._privacy.redact(text)
+            return redacted if redacted != text else value
+        if value is None or isinstance(value, bool):
+            return value
+        raise LLMContractError()
 
     def _save(self, path: Path, payload: dict[str, object]) -> None:
         self._directory.mkdir(parents=True, exist_ok=True)

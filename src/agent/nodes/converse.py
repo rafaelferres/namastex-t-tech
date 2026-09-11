@@ -57,8 +57,15 @@ _NUMBERS = re.compile(
     r"quarenta|cinquenta|sessenta|setenta|oitenta|noventa)\b",
     re.IGNORECASE,
 )
-# Remove the whole historical utterance, including the financial field name.
-_FINANCIAL = re.compile(r"R\$|\b(?:pr[eê]mio|franquia|preço|valor|mensalidade|reais)\b", re.I)
+# Financial prose belongs to templates even when it contains no digits or currency.
+_FINANCIAL = re.compile(
+    r"R\$|\b(?:pr[eê]mio\w*|franquia\w*|pre[çc]o\w*|valor\w*|reais|real|"
+    r"cust\w*|pag\w*|parcel\w*|gratuit\w*|mensal\w*|mensais|"
+    r"cobran[çc]\w*|cobrar\w*|descont\w*)\b|"
+    r"\bpor\s+m[eê]s\b|\b(?:sai|sair|fica|ficar)\s+por\b",
+    re.IGNORECASE,
+)
+_DECIMAL_AMOUNT = re.compile(r"\d+[.,]\d+")
 
 
 class Converser:
@@ -70,7 +77,9 @@ class Converser:
         self, context: ConversationInput, *, budget: float = 3.0
     ) -> ConversationResult:
         history = [
-            self._privacy.redact(text) for text in context.historico if not _FINANCIAL.search(text)
+            self._privacy.redact(text)
+            for text in context.historico
+            if not _FINANCIAL.search(text) and not _DECIMAL_AMOUNT.search(text)
         ]
         products = [
             {
@@ -107,11 +116,11 @@ class Converser:
             ),
             ConversationOutput.model_json_schema(),
             budget,
-            tools=(tool,) if projection is None else (),
+            tools=(tool,),
         )
         response = await self._client.complete(request)
         if response.tool_calls:
-            if projection is not None or len(response.tool_calls) != 1:
+            if len(response.tool_calls) != 1:
                 raise LLMContractError()
             call = response.tool_calls[0]
             plan = call.arguments.get("plano_id")
@@ -127,6 +136,6 @@ class Converser:
             parsed = ConversationOutput.model_validate_json(response.content)
         except ValidationError:
             raise LLMContractError() from None
-        if _NUMBERS.search(parsed.texto):
+        if _NUMBERS.search(parsed.texto) or _FINANCIAL.search(parsed.texto):
             raise LLMContractError()
         return ConversationResult(self._privacy.redact(parsed.texto), parsed.escalacao)
