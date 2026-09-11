@@ -20,20 +20,31 @@ class QuoteUnavailable(Exception):
         *,
         suspeita_contrato: bool = False,
         ano_normalizado: bool = False,
+        tentativas: int = 1,
+        todas_falhas_suspeitas: bool | None = None,
     ) -> None:
         super().__init__(message)
         self.suspeita_contrato = suspeita_contrato
         self.ano_normalizado = ano_normalizado
+        self.tentativas = tentativas
+        self.todas_falhas_suspeitas = (
+            suspeita_contrato if todas_falhas_suspeitas is None else todas_falhas_suspeitas
+        )
 
 
 class QuoteContractError(Exception):
     """Requisição ou resposta inválida; não deve ser retentada."""
 
     def __init__(
-        self, message: str = "Cotação fora do contrato", *, ano_normalizado: bool = False
+        self,
+        message: str = "Cotação fora do contrato",
+        *,
+        ano_normalizado: bool = False,
+        tentativas: int = 1,
     ) -> None:
         super().__init__(message)
         self.ano_normalizado = ano_normalizado
+        self.tentativas = tentativas
 
 
 @dataclass(frozen=True, slots=True)

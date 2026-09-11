@@ -483,6 +483,20 @@ QUOTE_FAILURE_RATE=1.0 docker compose up   # força a escada até o N3
 | Cotações consistentes com a tabela | 0 / 2.500 | `<preencher>` |
 | Menção de carência quando aplicável | 0 / 2.500 | `<preencher>` |
 
+Resiliência medida com os decorators reais e uma folha simulada, sem rede:
+
+| Configuração | Referência teórica | Falhas medidas | Chamadas físicas |
+|---|---|---|---|
+| Retry, três tentativas, sem hedge | 2,7% | **2,72% — 272/10.000** | 13.822 |
+| Retry por fora, hedge por dentro | 1,2167% | **1,18% — 118/10.000** | 14.036 |
+
+Seed 42 para a folha (20% de falha imediata, 10% de resposta lenta e 70% de sucesso),
+seed 2026 para jitter, timeout virtual de 2 s e janela de hedge de 1,5 s.
+O orçamento de 20 s permite completar as três tentativas; esses números não medem
+um turno completo limitado a 6 s. Sucessos são imediatos no duplo. Tolerância do
+portão: 0,5 ponto percentual em cada cenário. Reprodução:
+`uv run pytest tests/unit/test_residual_rate.py -q -s`.
+
 ---
 
 ## O que ficou de fora, e por quê

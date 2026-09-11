@@ -4,6 +4,35 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Added — Tarefa 3, 2026-09-11
+
+- Retry com backoff exponencial, full jitter, teto de tentativas e orçamento
+  absoluto que também cancela chamadas em andamento. Recusas e erros de contrato
+  atravessam sem nova tentativa; esgotamento informa a contagem realizada.
+- Falhas exclusivamente suspeitas promovem erro de contrato no esgotamento,
+  com limiar configurável de três tentativas. A evidência inclui ambas as
+  chamadas hedgeadas, sem perder a classificação individual da última falha.
+- Hedge de latência dispara no máximo uma segunda chamada, aceita cotação ou
+  recusa e cancela e aguarda as tarefas restantes. Erro de contrato tem prioridade;
+  falha rápida não dispara hedge. Composição verificada como Retry(Hedge(folha)).
+
+### Validation — Tarefa 3
+
+- **225 testes passaram em 4,02 s**, incluindo 63 novos. Ruff limpo e mypy
+  sem erros nos 15 arquivos de código. Sem rede, Docker ou sleep real.
+- Em 10.000 execuções por configuração: retry de três tentativas sem hedge
+  apresentou **2,72%** de falha residual (272 falhas, 13.822 chamadas físicas);
+  com hedge, **1,18%** (118 falhas, 14.036 chamadas físicas).
+- Simulação com sementes fixas, timeout virtual de 2 s, janela de 1,5 s e
+  orçamento de 20 s para permitir três tentativas. Esses resultados não medem
+  o futuro orçamento de conversa de 6 s. Os dois testes estatísticos consomem
+  cerca de 2 s de CPU no conjunto, sem espera real.
+- Regressões de evidência suspeita agregada e início do deadline reproduzidas
+  antes da correção. Cancelamento, conclusões simultâneas e orçamento verificados
+  com agendamento virtual; o suporte depende de internals do asyncio no Python 3.12.
+- Guard, cache de cotação, trace, persistência, grafo, prompts e adapters
+  permanecem fora desta fase.
+
 ### Added — Tarefa 2, 2026-09-11
 
 - A folha HTTP traduz respostas para Quote, Declined ou as exceções de domínio,
