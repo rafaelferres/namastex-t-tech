@@ -12,10 +12,11 @@ Desafio técnico FDE / AI Engineer — Namastex.
 - política de escalação com snapshot;
 - outbox.
 
-Ele é exercitado de ponta a ponta pelas conversas reais do dataset.
+Ele é exercitado de ponta a ponta pelas conversas reais do dataset, e dá para conversar com
+ele no terminal com `python -m interfaces.cli`.
 
-**O que não existe.** Não há webhook de WhatsApp, CLI de conversa interativa nem console. O
-ponto de entrada é o envelope de mensagem, e hoje só o replay do dataset o produz. Ver
+**O que não existe.** Não há webhook de WhatsApp nem console. O ponto de entrada é o
+envelope de mensagem, que hoje o replay do dataset e a CLI produzem. Ver
 [Limitações](#limitações).
 
 ---
@@ -26,10 +27,10 @@ ponto de entrada é o envelope de mensagem, e hoje só o replay do dataset o pro
 |---|---:|---:|
 | Extração de idade, 2.500 casos, isolada | — | **99,96%** (2.499/2.500) |
 | Extração de ano-modelo, 2.500 casos, isolada | — | **100%** (2.500/2.500) |
-| Conclusão fim a fim, elegíveis sem documento | — | **98,6%** (73/74) |
+| Conclusão fim a fim, elegíveis sem documento | — | **97,3%** (72/74) |
 | Recusas corretas nas 751 inelegíveis | **0 / 751** | **751 / 751** |
-| Cotações consistentes com a tabela | **0 / 2.500** | **73 / 73** |
-| Menção de carência quando aplicável | **0 / 2.500** | **73 / 73** |
+| Cotações consistentes com a tabela | **0 / 2.500** | **72 / 72** |
+| Menção de carência quando aplicável | **0 / 2.500** | **72 / 72** |
 
 As três últimas linhas comparam o agente com o vendedor humano do histórico. O vendedor
 cotou todos os inelegíveis, e nenhum dos seus preços bate com a tabela. O agente recusa
@@ -46,7 +47,11 @@ Como cada linha foi medida:
   - Agente inteiro sobre 150 conversas do dataset, sorteadas com seed 2026.
   - A API local rodou com `QUOTE_SEED=42`, 20% de falha e 10% de lentidão.
   - Conta como concluída a conversa que apresentou cotação.
-  - Dados em `docs/measurements/task11-e2e-p999.json`.
+  - Dados da rodada mais recente, com o código atual, em
+    `docs/measurements/task12-e2e-divergencia.json`. A rodada da tarefa 11 deu 73/74; a
+    diferença é uma cotação indisponível a mais no sorteio.
+  - O caminho da recusa não mudou desde a tarefa 11, por isso a linha das 751 vem daquela
+    rodada.
 - **Recusas corretas.**
   - Agente inteiro sobre as 751 conversas que o oráculo marca como inelegíveis: idade
     fora de 18–75 ou veículo com mais de 20 anos na data da conversa.
@@ -59,18 +64,18 @@ Como cada linha foi medida:
   - Mensalidade, franquia e pro-rata tinham de ser iguais.
   - A conferência pega também extração errada, porque perfil trocado dá o preço de outro
     perfil.
-- **Carência.** Aplica-se quando o payload da cotação traz carência, e as 73 traziam.
+- **Carência.** Aplica-se quando o payload da cotação traz carência, e as 72 traziam.
   Conta como mencionada quando o texto enviado a nomeia com os dias.
 
 > **Ressalvas — leia antes dos números**
 >
 > 1. **Há duas taxas de conclusão.**
->    - **48,7% (73/150)** é sobre a amostra inteira. Esse denominador inclui 45 inelegíveis,
+>    - **48,0% (72/150)** é sobre a amostra inteira. Esse denominador inclui 45 inelegíveis,
 >      que devem ser recusados (e os 45 foram), e 31 elegíveis que mandaram documento. Esses
 >      31 escalam por decisão de privacidade, não por falha.
->    - **98,6% (73/74)** é sobre as elegíveis sem documento, e é a taxa que mede o agente.
->      A que falta é uma cotação indisponível depois da escada inteira.
-> 2. **125 dos 671 turnos (18,6%) são sintéticos.**
+>    - **97,3% (72/74)** é sobre as elegíveis sem documento, e é a taxa que mede o agente.
+>      As duas que faltam são cotações indisponíveis depois da escada inteira.
+> 2. **126 dos 672 turnos (18,8%) são sintéticos.**
 >    - O dataset nunca traz data de vigência. O harness responde quando o agente pergunta
 >      e, se a conversa acaba sem cotação, pede o plano Completo.
 >    - Sem isso, nenhuma conversa do dataset cotaria. A taxa mede o agente diante de um
@@ -79,14 +84,14 @@ Como cada linha foi medida:
 >    - A lista lexical foi escrita sobre as frases do gerador; que ela cubra o dataset só
 >      prova que a lista cobre a lista.
 >    - O número que generaliza é o do modelo. Nas 39 conversas da amostra em que uma
->      objeção chegou ao agente, as 39 foram ao nó de objeção, com 63 classificações feitas
+>      objeção chegou ao agente, as 39 foram ao nó de objeção, com 60 classificações feitas
 >      pelo modelo e nenhuma pelo piso lexical.
 > 4. **A resolução de mídia foi exercitada só por fixtures.** O dataset traz marcadores
 >    (`[imagem] ...`), não arquivos. No replay a resolução nunca acontece; os ramos
 >    resolvidos rodam contra o modelo real apenas sobre quatro fixtures ([tabela](#mídia-exercitada-de-verdade)).
 > 5. **Os denominadores diferem de propósito.**
 >    - A baseline humana é sobre as 2.500 cotações do histórico.
->    - A do agente é sobre as 73 cotações que ele de fato fez na amostra: ele não cota
+>    - A do agente é sobre as 72 cotações que ele de fato fez na amostra: ele não cota
 >      sem os cinco campos, então não há cotação do agente nas outras conversas.
 
 ### Duas evidências da fase final
@@ -145,7 +150,25 @@ cp .env.example .env               # preencha OPENROUTER_API_KEY
 export AUTOSEGURO_DATASET=../namastex-fde-challenge/dataset/conversations.parquet
 ```
 
-Não há CLI de conversa interativa. O agente roda sobre conversas do dataset:
+Conversa no terminal, com a API da etapa 1 no ar:
+
+```bash
+uv run --env-file .env python -m interfaces.cli --trace --quote-url http://127.0.0.1:18010
+# retoma uma conversa pelo id impresso ao sair
+uv run --env-file .env python -m interfaces.cli --conversation cli-1a2b3c4d
+```
+
+Comandos dentro da conversa:
+- `/imagem <arquivo>`, `/audio <arquivo>` e `/documento <nome>` injetam mídia;
+- `/encerrar` encerra a conversa e apaga slots e estado do grafo;
+- `/sair` sai sem encerrar;
+- `/ajuda` lista os comandos.
+
+Com `--trace`, cada resposta vem acompanhada do que aconteceu por baixo: slots com
+proveniência, políticas, opinião do conversador e tentativas de cotação com status,
+latência e hedge. Uma sessão real está em [`docs/demo-cli.md`](docs/demo-cli.md).
+
+O agente também roda sobre conversas do dataset:
 
 ```bash
 # conclusão fim a fim, 150 conversas (consome LLM: ~4 min, ~US$ 0,80)
@@ -346,7 +369,7 @@ src/
   agent/           LangGraph: grafo, nós, prompts, templates
   infrastructure/  quote/, planos/, llm/, media/, handoff/, persistence/, tracing/,
                    privacy/, dataset/, http_errors.py, wiring.py
-  interfaces/      replay, trace (inspeção), rendering, conversation_report
+  interfaces/      cli (conversa), replay, trace (inspeção), rendering, conversation_report
 ```
 
 Arquitetura hexagonal, com dependência sempre para dentro. `domain/` e `application/` não
@@ -382,40 +405,55 @@ milissegundos.
 
 ## Quando a `/quote` falha
 
+A escada tem três níveis:
+
 | Nível | Ação | Lead percebe? |
 |---|---|---|
-| N0 | cache exato: mesma cotação já resolvida no dia, sem ir à rede | não |
-| N1 | chamada com timeout de 2 s | não |
-| N2 | retry com jitter e hedge em 100 ms, até 3 tentativas e 3,5 s | não |
-| N3 | handoff com snapshot completo | sim |
+| N0 | chamada direta, timeout de 2 s, com hedge em 100 ms na cauda de latência | não |
+| N1 | retry com jitter, até 3 tentativas dentro de 3,5 s | não |
+| N2 | escalação com snapshot completo | sim |
 
-Nunca: preço estimado pelo agente. O cache não serve de reserva depois da falha: esgotada
-a escada, a conversa vai para N3. N0 a N2 são a cadeia de decorators; N3 é decisão de
-conversa e vive no grafo. Na amostra, 1 das 74 cotações lógicas chegou a N3.
+Nunca: preço estimado pelo agente. N0 e N1 são a cadeia de decorators; N2 é decisão de
+conversa e vive no grafo. Na amostra da tarefa 12, 2 das 74 cotações lógicas chegaram a N2.
+
+**O cache não é nível da escada.**
+- **Onde fica:** antes do retry. Ele evita a chamada quando a mesma cotação (cinco slots e o dia) já foi obtida hoje.
+- **Por que não é reserva:** o preço é determinístico e o TTL vai até a meia-noite, então uma entrada do dia nunca está expirada. E, se a chamada falhou, não há entrada para servir. Por isso ele não pode servir de reserva depois da falha.
+- **Histórico:** uma versão anterior deste README o listava como nível de degradação. Era erro de desenho, corrigido na D-039.
 
 ---
 
 ## Handoff
 
 É um motor determinístico, com uma classe por regra, avaliadas em ordem a cada turno. O
-LLM pode sugerir escalação, mas quem decide é a política. A sugestão fica gravada junto
-de cada handoff (`sugerido_por_llm`).
+conversador pode sugerir escalação, mas quem decide é a política. Em todo turno em que o
+conversador fala, as duas opiniões ficam gravadas no evento `decisao` da timeline,
+inclusive quando ninguém escala (D-039). A divergência medida está abaixo da tabela.
 
-| Ordem | Regra | Dispara quando | Na amostra de 150 |
+| Ordem | Regra | Dispara quando | Na amostra de 150 (tarefa 12) |
 |---:|---|---|---:|
 | 1 | Documento recebido | o lead manda documento; ele nunca sai do processo | 31 |
 | 2 | Mídia não resolvida | o segundo áudio sem transcrição | 0 |
-| 3 | Cotação esgotada | a escada da `/quote` terminou sem resposta | 1 |
+| 3 | Cotação esgotada | a escada da `/quote` terminou sem resposta | 2 |
 | 4 | Limite de tokens | 16.000 tokens na conversa | 0 |
-| 5 | Prazo do turno | 18 s esgotados | 0 |
+| 5 | Prazo do turno | 18 s esgotados — pior caso; a mediana do turno é 1,58 s e o p99, 5,05 s | 0 |
 | 6 | LLM indisponível | o LLM falha também no retry | 0 |
 | 7 | Desconto fora da tabela | pedido de desconto ou três objeções de preço | 0 |
 | 8 | Pedido de humano | pedido explícito de atendente | 0 |
 | 9 | Laço de esclarecimento | três pedidos seguidos do mesmo dado, sem avanço | 0 |
-| 10 | Fora de escopo | sinistro, cobrança, cancelamento | não ligada¹ |
+| 10 | Fora de escopo | sinistro, cobrança, cancelamento, renovação ou outro ramo, pela categoria do conversador ou pelo piso lexical | 0 |
 
-¹ A regra existe e é testada, mas nada no grafo preenche o assunto da conversa, então ela
-nunca dispara em execução ([Limitações](#limitações)).
+A regra "fora de escopo" usa a categoria `assunto` que o conversador emite no schema, com
+um piso lexical abaixo. O piso existe porque a política pede o dado que falta antes de o
+conversador falar: sem ele, "bati o carro, quero abrir sinistro" receberia "qual a sua
+idade?". O piso não dispara em nenhuma das mensagens de lead do dataset
+(`tests/regression/test_scope_floor.py`).
+
+**Divergência medida:** 0 em 222 turnos com fala (`docs/measurements/task12-e2e-divergencia.json`).
+- O modelo nunca sugeriu escalar, e a política nunca escalou depois de uma fala do conversador.
+- As 33 escalações da amostra aconteceram fora dos turnos de fala: 31 por documento, decididas pela política antes do conversador falar, e 2 por cotação esgotada, depois da apresentação.
+- A métrica está ligada e testada nos dois sentidos, mas este dataset não a exercita: nenhum lead pede humano nem traz assunto fora de escopo.
+- O número que falta vem de tráfego real.
 
 O handoff produz três efeitos:
 1. **mensagem ao lead** — primeiro, porque é o único efeito com prazo humano;
@@ -457,7 +495,10 @@ somente para leitura e não reexecuta nada.
 ## Privacidade
 
 O dataset é sintético, mas é tratado como se não fosse. CPF e CEP aparecem em todas as
-2.500 conversas, e-mail e telefone em 1.379 mensagens cada e placa em 839.
+2.500 conversas, e-mail e telefone em 1.379 mensagens cada e placa em 839. Uma versão
+anterior deste README dizia 3.879 mensagens com CEP, porque a regex não tinha fronteira e
+casava dentro dos telefones (2.500 + 1.379). O erro apareceu quando os fatos do dataset
+passaram a ser gerados por `scripts/dataset_facts.py`, e não mais à mão.
 
 A redação acontece **na entrada**, antes de qualquer coisa tocar log, contexto de LLM ou
 banco:
@@ -532,15 +573,16 @@ para falhar N vezes. Nenhum teste depende do sorteio da API.
 
 Mesmas 150 conversas em todas as colunas.
 
-| Desfecho | 9.2 antes (6 s, LLM 2,5 s) | 9.2 depois (10 s, LLM 4,5 s) | Tarefa 10 (mídia) | Tarefa 11 (p99.9 + retry) |
-|---|---:|---:|---:|---:|
-| **Cotada** | **0** | **38 (25,3%)** | **64 (42,7%)** | **73 (48,7%)** |
-| Recusa por regra | 42 | 44 | 44 | 45 |
-| Documento recebido | 62¹ | 63¹ | 31 | 31 |
-| Limite de tokens | 27 | 0 | 0 | 0 |
-| LLM cortado ou indisponível | 19 | 4 | 9 | **0** |
-| Cotação indisponível após a escada | 0 | 1 | 2 | 1 |
-| Prazo do turno | 0 | 0 | 0 | 0 |
+| Desfecho | 9.2 antes (6 s, LLM 2,5 s) | 9.2 depois (10 s, LLM 4,5 s) | Tarefa 10 (mídia) | Tarefa 11 (p99.9 + retry) | Tarefa 12 (assunto + divergência) |
+|---|---:|---:|---:|---:|---:|
+| **Cotada** | **0** | **38 (25,3%)** | **64 (42,7%)** | **73 (48,7%)** | **72 (48,0%)** |
+| Recusa por regra | 42 | 44 | 44 | 45 | 45 |
+| Documento recebido | 62¹ | 63¹ | 31 | 31 | 31 |
+| Limite de tokens | 27 | 0 | 0 | 0 | 0 |
+| LLM cortado ou indisponível | 19 | 4 | 9 | **0** | **0** |
+| Cotação indisponível após a escada | 0 | 1 | 2 | 1 | 2 |
+| Prazo do turno | 0 | 0 | 0 | 0 | 0 |
+| Fora de escopo | — | — | — | — | 0 |
 
 ¹ Até a tarefa 9.2, documento, imagem e áudio escalavam juntos na primeira mídia.
 
@@ -556,11 +598,15 @@ O que mudou em cada coluna:
     e o retry recuperou o turno.
 - **Recusa por regra, 44 para 45:** uma conversa inelegível que antes era cortada pelo LLM
   agora chega à recusa.
+- **Tarefa 11 para tarefa 12:** o conversador passou a emitir `assunto`, e a decisão
+  passou a ser gravada em todo turno de fala (D-039). A cotação que falta a mais é uma
+  cotação indisponível no sorteio. O "fora de escopo" não disparou em nenhuma conversa.
 
-Nas 150 conversas:
+Nas 150 conversas da tarefa 12:
 - as 45 inelegíveis foram recusadas e nenhuma elegível foi recusada;
-- nenhuma das 671 falas pediu documento, foto ou CPF;
-- o custo conhecido foi de US$ 0,78.
+- nenhuma das 672 falas pediu documento, foto ou CPF;
+- as 72 cotações batem com a tabela no perfil real e trazem a carência;
+- o custo conhecido foi de US$ 0,83.
 
 ### Onde o tempo do turno vai
 
@@ -637,7 +683,7 @@ o desfecho "ganho" é de 0,02, e o desfecho não depende do plano (qui-quadrado,
 **Memória de longo prazo.** As conversas são curtas.
 
 **Promessa com retomada assíncrona.** Exigiria worker, agendamento e mensagem proativa.
-Um N3 meia-boca é pior que um handoff honesto.
+Um nível intermediário meia-boca é pior que um handoff honesto.
 
 **Cifragem do CEP em repouso.** Ver [Retenção](#retenção-slot-é-dado-operacional-mensagem-é-log).
 
@@ -645,18 +691,14 @@ Um N3 meia-boca é pior que um handoff honesto.
 
 ## Limitações
 
-- **Não há canal real.** Não existe webhook de WhatsApp, CLI de conversa nem console
-  Streamlit. O agente é exercitado pelo replay do dataset, e o debounce de rajada é
-  exercitado pelo replay e por testes com tempo virtual, não por um canal de rede.
+- **Não há canal de rede.** Não existe webhook de WhatsApp nem console Streamlit.
+  - O agente é exercitado pelo replay do dataset e pela CLI.
+  - O debounce de rajada é exercitado pelo replay e por testes com tempo virtual, não por um canal real.
 - **A entrega da outbox não está ligada.**
   - Decisões de escalação, efeitos e respostas ao lead são gravados.
   - O `HandoffDispatcher`, com retry por efeito, existe e é testado, mas nenhum processo
     o executa.
   - Não há adapter de canal que envie a mensagem.
-- **A regra "fora de escopo" não dispara.** Nada no grafo classifica o assunto da
-  conversa.
-- **A divergência negativa não é persistida.** Quando o LLM sugere escalar e a política
-  não escala, a sugestão não é gravada; ela só é gravada junto de um handoff.
 - **Mídia real depende do canal.** O adaptador lê arquivo local; baixar mídia do WhatsApp
   fica com o adapter do canal. OCR de CNH ficou fora, e documento sempre escala.
 - **Texto de LLM não é determinístico.** Os logs de execução reproduzem o sorteio da API,
@@ -699,13 +741,13 @@ diz o que é cada arquivo e o que foi removido na exportação.
 ## Registro
 
 As decisões de implementação, em ordem, estão em [`docs/DECISIONS.md`](docs/DECISIONS.md)
-(D-001 a D-038). O estado do sistema está em [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md) e
+(D-001 a D-039). O estado do sistema está em [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md) e
 o que cada fase entregou, com o número do portão de saída, em
 [`docs/CHANGELOG.md`](docs/CHANGELOG.md). Os números da tarefa 8, de 88,48% em idade e
 93,88% em ano, mediam progresso na conversa sob um corte de 2 s por chamada, não
 acurácia; a extração isolada está em [Resultados](#resultados).
 
-Validação da tarefa 11:
-- `uv run pytest -m "not slow"`: **651 passed**;
-- `uv run pytest` com o corpus local: **663 passed**;
+Validação da tarefa 12:
+- `uv run pytest -m "not slow"`: **673 passed**;
+- `uv run pytest` com o corpus local: **686 passed**;
 - ruff e mypy limpos.

@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS turn_events (
     status TEXT NOT NULL,
     latencia_ms INTEGER NOT NULL,
     erro TEXT,
-    criado_em TEXT NOT NULL
+    criado_em TEXT NOT NULL,
+    sugestao TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_turn_events_trace ON turn_events(trace_id, criado_em);
 

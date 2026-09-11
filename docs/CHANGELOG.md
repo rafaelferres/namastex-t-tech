@@ -4,6 +4,37 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Added — Tarefa 12, 2026-09-11
+
+- CLI de conversa, `python -m interfaces.cli`, adapter sobre os mesmos casos de uso:
+  - `--trace` mostra slots com proveniência, políticas, a opinião do conversador e as
+    tentativas de cotação;
+  - `--conversation` retoma pelo checkpointer;
+  - `/imagem`, `/audio` e `/documento` injetam mídia; `/encerrar` apaga slots e estado.
+- Sessão real em `docs/demo-cli.md`: chega à cotação com falha, hedge e retry no turno.
+- Os buracos que a CLI expôs foram para a aplicação e o wiring: `Ingestor.next_index`,
+  `SalesStack.inspector` (inspeção nas conexões vivas) e `open_live_stack` (composição de
+  produção).
+- Divergência sempre gravada (D-039): o evento `decisao` guarda, em todo turno de fala, a
+  decisão da política e a sugestão do modelo (coluna nova `turn_events.sugestao`).
+  Medida na amostra de 150: **0 em 222 turnos**. O dataset não exercita a métrica:
+  nenhum lead pede humano nem traz assunto fora de escopo.
+- "Fora de escopo" ligado: `assunto` no schema do conversador, com piso lexical
+  (`domain/scope.py`) para quando a política pede dado antes da fala. Sinistro e
+  cancelamento escalam com o motivo certo; o piso não dispara em nenhuma mensagem de
+  lead do dataset.
+
+### Fixed — Tarefa 12
+
+- A escada é descrita com três níveis (chamada com hedge, retry, escalação). O cache é
+  descrito como camada preventiva: com TTL até a meia-noite e preço determinístico, ele
+  nunca serviria de reserva depois de falha. Corrigido no README e na arquitetura.
+- A arquitetura não lista mais webhook e console como adapters existentes.
+- Mesma amostra, código atual: **72/150 cotadas, 72/74 elegíveis sem documento**, LLM
+  cortado 0, 72/72 cotações consistentes com a tabela e com carência.
+- Validação: **673 passed** no loop rápido; **686 passed** na suíte completa com o
+  corpus; ruff e mypy limpos.
+
 ### Fixed — Tarefa 11, 2026-09-11
 
 - Teto de LLM dimensionado por conversa (D-038): 7 s por chamada, o p99.9 do extrator em

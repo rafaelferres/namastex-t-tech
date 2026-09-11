@@ -108,6 +108,29 @@ def test_checkpoints_give_the_final_state_of_each_turn_in_order(plans_payload, q
     assert all(item["rota"][-1] == "present" for item in states)
 
 
+def test_report_shows_the_model_opinion_next_to_the_policy_decision():
+    opinion = TurnEvent(
+        "c:m1", "c", "decisao", "segue", 0, None, NOW, sugestao="pedido_de_humano"
+    )
+    report = TurnReport(
+        trace_id="c:m1",
+        entrada="Oi",
+        slots=(),
+        rota=("extract", "policy", "converse"),
+        status="ativa",
+        pedido=None,
+        erro=None,
+        objecao=None,
+        objecao_fonte=None,
+        etapas=(opinion,),
+        tentativas=(),
+        resposta=REPLY,
+        escalacao=None,
+    )
+    text = render_conversation("c", (report,))
+    assert "- Conversador: sugeriu `pedido_de_humano`; a política não escalou (divergência)" in text
+
+
 def test_report_is_readable_markdown_with_attempts_hedge_and_snapshot():
     report = TurnReport(
         trace_id="c:m2",

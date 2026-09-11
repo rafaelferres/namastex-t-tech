@@ -16,6 +16,7 @@ from domain.handoff import HandoffReason
 from domain.objection import Objecao
 from domain.product import ProductFacts
 from domain.quote import Declined, Quote, QuoteOutcome, QuoteUnavailable
+from domain.scope import Assunto
 from infrastructure.privacy import PrivacyRedactor
 
 
@@ -34,6 +35,8 @@ class ConversationOutput(BaseModel):
     escalacao: HandoffReason | None
     # Obrigatório no schema strict; roteia para o nó de objeção junto com o piso lexical.
     objecao: Objecao | Literal["nenhuma"]
+    # Liga a regra "fora de escopo"; o grafo cai no piso lexical quando o modelo não fala.
+    assunto: Assunto
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +47,7 @@ class ConversationResult:
     # Fala do modelo descartada pelo guardrail, já redigida; o grafo registra no trace.
     violacao: str | None = None
     objecao: Objecao | None = None
+    assunto: Assunto | None = None
 
 
 def project_quote(
@@ -158,5 +162,8 @@ class Converser:
                 parsed.escalacao,
                 violacao=text,
                 objecao=objection,
+                assunto=parsed.assunto,
             )
-        return ConversationResult(text, parsed.escalacao, objecao=objection)
+        return ConversationResult(
+            text, parsed.escalacao, objecao=objection, assunto=parsed.assunto
+        )

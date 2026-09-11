@@ -316,6 +316,26 @@ async def verify_quotes(
     }
 
 
+def divergence(decisions: Sequence[tuple[str, str | None]]) -> dict[str, object]:
+    """Sugestão do conversador contra a decisão da política, nos turnos em que ele falou."""
+    return {
+        "turnos_com_fala": len(decisions),
+        "modelo_sugeriu": sum(hint is not None for _, hint in decisions),
+        "politica_escalou": sum(status != "segue" for status, _ in decisions),
+        "modelo_sugeriu_politica_nao": sum(
+            hint is not None and status == "segue" for status, hint in decisions
+        ),
+        "politica_escalou_modelo_nao": sum(
+            hint is None and status != "segue" for status, hint in decisions
+        ),
+        "motivos_diferentes": sum(
+            hint is not None and status not in ("segue", hint) for status, hint in decisions
+        ),
+        "sugestoes": dict(Counter(hint for _, hint in decisions if hint)),
+        "decisoes": dict(Counter(status for status, _ in decisions)),
+    }
+
+
 def classify(result: Mapping[str, object], motivo: str | None) -> str:
     if result["erro"]:
         return "erro_execucao"
@@ -397,6 +417,9 @@ async def measure(args: argparse.Namespace) -> dict[str, object]:
         logical = connection.execute(
             "SELECT latencia_ms, status FROM quote_attempts WHERE tentativa=0"
         ).fetchall()
+        decisions = connection.execute(
+            "SELECT status, sugestao FROM turn_events WHERE etapa='decisao'"
+        ).fetchall()
     finally:
         connection.close()
 
@@ -441,6 +464,7 @@ async def measure(args: argparse.Namespace) -> dict[str, object]:
             "roteadas_ao_no": len(sent & routed),
             "eventos_por_fonte": dict(Counter(status for _, status in objection_events)),
         },
+        "divergencia": divergence(decisions),
         "apresentaram_preco": sum(item["cotacao"] is not None for item in results),
         "verificacao_cotacoes": verification,
         "falas_pedindo_arquivo": sum(int(str(item["pedidos_de_arquivo"])) for item in results),

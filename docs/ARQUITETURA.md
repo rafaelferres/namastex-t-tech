@@ -34,32 +34,35 @@ src/
   domain/          entidades, value objects, políticas. ZERO import de framework
   application/     casos de uso e portas (Protocol)
   agent/           LangGraph: grafo, nós, prompts, templates
-  infrastructure/  quote/, planos/, media/, persistence/, privacy/   (SQLite, httpx)
-  interfaces/      webhook, cli, replay, streamlit_app
+  infrastructure/  quote/, planos/, llm/, media/, handoff/, persistence/, tracing/,
+                   privacy/, wiring.py   (SQLite, httpx)
+  interfaces/      cli, replay, trace, rendering, conversation_report
 ```
 
 `domain/` e `application/` não importam `langgraph`, `httpx` nem `sqlite3`. O
 grafo é detalhe de orquestração, não o núcleo — é isso que permite testar as
 políticas sem subir infraestrutura.
 
-Quatro adapters de entrada consomem os mesmos casos de uso:
+Os adapters que existem consomem os mesmos casos de uso:
 
 | Adapter | Papel |
 |---|---|
-| `webhook` | produção, canal real |
-| `cli` | conversa manual no terminal |
-| `replay` | reprocessa conversas do dataset; gera o log de execução; roda em CI |
-| `streamlit_app` | console de demonstração e avaliação |
+| `cli` | conversa no terminal, com `--trace` e retomada por `--conversation` |
+| `replay` | envelopes redigidos de conversas do dataset; o harness fim a fim usa os mesmos |
+| `trace` | inspeção de uma cotação ou de uma conversa inteira, só leitura |
 
-Nenhum contém lógica. Se um adapter precisa de algo que os casos de uso não
-expõem, o buraco está na camada de aplicação.
+Webhook de WhatsApp e console Streamlit não existem. Nenhum adapter contém lógica. Se
+um precisa de algo que os casos de uso não expõem, o buraco está na camada de aplicação.
+A CLI achou dois: o índice da próxima mensagem numa conversa retomada, agora
+`Ingestor.next_index`, e a inspeção ligada às conexões vivas, agora `SalesStack.inspector`,
+que drena a timeline antes de ler.
 
 ---
 
 ## 3. Ciclo de vida de um turno
 
 ```
-webhook/cli/replay
+cli/replay
    ↓
 InboundMessage (envelope canônico)
    ↓
@@ -110,8 +113,8 @@ garante exatamente uma entrega. Uma queda do processo perde a janela em memória
 reprocessamento durável dos turnos fica para a orquestração futura.
 
 Replay lê parquet local, filtra mensagens de vendedor e ordena exclusivamente por
-message_index dentro de cada conversa. A CLI aceita --conversation repetido e
-redige a saída; AUTOSEGURO_DATASET substitui o arquivo local padrão. O harness
+message_index dentro de cada conversa. `interfaces.replay` aceita --conversation
+repetido e redige a saída; AUTOSEGURO_DATASET substitui o arquivo local padrão. O harness
 em tests/golden recebe somente mensagens redigidas, sem labels, e calcula acurácia
 exata por idade e veiculo_texto. A amostra de 48 conversas é estratificada; o
 corpus completo de 2.500 casos e a auditoria de CPF são slow. O oráculo encontra
@@ -381,15 +384,20 @@ são registrados só com códigos genéricos, sem request, CEP ou traceback.
 
 | Nível | Ação | Lead percebe |
 |---|---|---|
-| N0 | chamada direta, timeout de 2s | não |
-| N1 | retry com backoff e jitter | não |
-| N2 | cache de cotação equivalente | não |
-| N3 | escalação com snapshot | sim |
+| N0 | chamada direta, timeout de 2 s, com hedge em 100 ms na cauda de latência | não |
+| N1 | retry com jitter, até 3 tentativas dentro do orçamento de 3,5 s | não |
+| N2 | escalação com snapshot | sim |
 
 Nunca: preço estimado pelo agente.
 
-N0 a N2 são a cadeia. N3 vive no grafo — se a cadeia entregasse escalação, o
+N0 e N1 são a cadeia. N2 vive no grafo — se a cadeia entregasse escalação, o
 `QuoteProvider` passaria a saber enviar mensagem no WhatsApp.
+
+**O cache não é nível da escada** (D-039). Ele fica antes do retry e evita a chamada
+quando a mesma cotação — cinco slots e o dia — já foi obtida hoje. Como o preço é
+determinístico e o TTL vai até a meia-noite, uma entrada do dia nunca está expirada; e, se
+a chamada falhou, não há entrada para servir. Ele é camada preventiva, não reserva depois
+da falha.
 
 ---
 
@@ -525,18 +533,21 @@ avaliadas a cada turno.
 |---|---|
 | Documento recebido | parte dos 56,8% com mídia |
 | Mídia não resolvida | — |
-| Cotação esgotou o orçamento (N3) | ~1,2% |
+| Cotação esgotou o orçamento (N2) | ~1,2% |
 | Desconto fora da tabela | ~52% dos leads objetam |
 | Pedido explícito de humano | raro |
 | Laço de esclarecimento no mesmo slot | — |
-| Assunto fora de escopo | — |
+| Assunto fora de escopo (sinistro, cobrança, cancelamento, renovação, outro ramo) | categoria do conversador com piso lexical (D-039) |
 
 **Recusa por regra de aceitação não é escalação.** É resposta final. Escalar 30%
 do tráfego seria falhar no critério.
 
-O LLM emite um sinal estruturado (`sugere_escalacao`, `motivo_sugerido`) como
-insumo adicional. A política decide. As duas opiniões são gravadas, e a divergência
-é métrica.
+O conversador emite, no mesmo schema strict, `escalacao` (motivo sugerido ou nulo) e
+`assunto`. A política decide. Em todo turno em que o conversador fala, o evento `decisao`
+da timeline grava as duas opiniões — a decisão da política em `status`, a sugestão do
+modelo em `sugestao` —, inclusive quando ninguém escala; a divergência é métrica (D-039).
+`assunto` liga a regra "fora de escopo"; abaixo dele, um piso lexical reconhece sinistro,
+cobrança, cancelamento, renovação e outro ramo antes de a política pedir dado.
 
 Implementado em domain/handoff.py: HandoffPolicy avalia a lista de regras na
 ordem da tabela e para na primeira que dispara. LacoEsclarecimento tem limiar
@@ -715,7 +726,7 @@ RedactingFormatter atua após formatação, incluindo args, traceback e stack.
 O wiring envolve handlers existentes do logger raiz; handlers adicionados depois
 ou em loggers sem propagação devem instalar o mesmo formatter.
 
-O console futuro renderiza texto redigido por padrão.
+A CLI e a inspeção de trace exibem só texto redigido.
 
 ### Slots operacionais e retenção
 
@@ -889,12 +900,12 @@ README.
 | lock por conversa | `asyncio.Lock` por `conversation_id`, em processo |
 | debounce de rajada | janela em memória no `ingest`; 23,1% dos turnos têm 2+ mensagens |
 | dedup de webhook | índice único em `messages.provider_message_id` |
-| cache de cotação | tabela `quote_cache` — sobrevive a restart e aparece no console |
+| cache de cotação | tabela `quote_cache` — sobrevive a restart e aparece na inspeção de trace |
 | cache de `/planos` | dicionário em memória com TTL |
 
 O cache de cotação em tabela é melhor que em Redis para esta entrega: ele fica
-visível no console de trace junto com as tentativas, o que torna o N2 da escada
-demonstrável em vez de invisível.
+visível na inspeção de trace junto com as tentativas, com `origem=cache` na chamada que
+ele evitou.
 
 ### Checkpointer do LangGraph
 
@@ -936,7 +947,7 @@ com áudio têm menos margem.
 
 ```bash
 QUOTE_SEED=42 docker compose up            # falhas reprodutíveis
-QUOTE_FAILURE_RATE=1.0 docker compose up   # força a escada até o N3
+QUOTE_FAILURE_RATE=1.0 docker compose up   # força a escada até a escalação (N2)
 ```
 
 O `docker compose` sobe apenas a API de cotação do desafio. A aplicação não tem
@@ -960,7 +971,7 @@ produz sequência determinística — use duplos.
 | Conhecimento de produto no prompt | já vem no payload da API; cópia envelhece |
 | Circuit breaker sobre `/quote` | falha independente; abriria sem motivo |
 | Calculador local de prêmio | segunda fonte de verdade divergindo em silêncio |
-| Promessa assíncrona (nível entre N2 e N3) | exigiria worker e mensagem proativa |
+| Promessa assíncrona (nível entre N1 e N2) | exigiria worker e mensagem proativa |
 | Scoring de lead | correlação 0,02 entre preço e desfecho |
 | Memória de longo prazo | conversas têm 8 a 14 mensagens |
 | Postgres e Redis | processo único; SQLite e primitivas em memória bastam |

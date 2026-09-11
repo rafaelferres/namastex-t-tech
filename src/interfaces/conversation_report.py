@@ -9,6 +9,7 @@ from collections.abc import Iterable, Sequence
 
 from application.inspect_conversation import TurnReport
 from application.tracing import QuoteAttempt
+from application.turns import TurnEvent
 from domain.handoff import HandoffDecision
 from domain.quote import Declined
 from interfaces.rendering import render_outbound
@@ -74,6 +75,13 @@ def _escalation(decision: HandoffDecision | None) -> str:
     return f"**escala** — regra `{decision.motivo}`{llm}"
 
 
+def _opinion(event: TurnEvent) -> str:
+    said = f"sugeriu `{event.sugestao}`" if event.sugestao else "não sugeriu escalar"
+    policy = "não escalou" if event.status == "segue" else f"escalou por `{event.status}`"
+    agree = (event.sugestao or "segue") == event.status
+    return f"{said}; a política {policy}" + ("" if agree else " (divergência)")
+
+
 def _snapshot(decision: HandoffDecision) -> list[str]:
     snapshot = decision.snapshot
     if snapshot is None:
@@ -108,6 +116,9 @@ def render_turn(number: int, report: TurnReport) -> list[str]:
     )
     lines += ["", "**Políticas**", "", f"- Aceitação: {_acceptance(report)}"]
     lines.append(f"- Escalação: {_escalation(report.escalacao)}")
+    opinion = next((event for event in report.etapas if event.etapa == "decisao"), None)
+    if opinion is not None:
+        lines.append(f"- Conversador: {_opinion(opinion)}")
     if report.pedido:
         lines.append(f"- Falta dado: `{report.pedido}`, pedido ao lead")
     if report.objecao:

@@ -43,9 +43,9 @@ class SQLiteTurnEvents:
     def _write(self, event: TurnEvent) -> None:
         with self._lock, self._connection:
             self._connection.execute(
-                "INSERT OR IGNORE INTO turn_events "
-                "(id, trace_id, conversation_id, etapa, status, latencia_ms, erro, criado_em) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO turn_events (id, trace_id, conversation_id, etapa, "
+                "status, latencia_ms, erro, criado_em, sugestao) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     event.trace_id + ":" + event.etapa,
                     event.trace_id,
@@ -55,6 +55,7 @@ class SQLiteTurnEvents:
                     event.latencia_ms,
                     event.erro,
                     event.criado_em.isoformat(),
+                    event.sugestao,
                 ),
             )
 
@@ -65,13 +66,20 @@ class SQLiteTurnEvents:
     def _read(self, trace_id: str) -> tuple[TurnEvent, ...]:
         with self._lock:
             rows = self._connection.execute(
-                "SELECT trace_id, conversation_id, etapa, status, latencia_ms, erro, criado_em "
-                "FROM turn_events WHERE trace_id=? ORDER BY criado_em, rowid",
+                "SELECT trace_id, conversation_id, etapa, status, latencia_ms, erro, criado_em, "
+                "sugestao FROM turn_events WHERE trace_id=? ORDER BY criado_em, rowid",
                 (trace_id,),
             ).fetchall()
         return tuple(
             TurnEvent(
-                row[0], row[1], row[2], row[3], row[4], row[5], datetime.fromisoformat(row[6])
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                datetime.fromisoformat(row[6]),
+                sugestao=row[7],
             )
             for row in rows
         )

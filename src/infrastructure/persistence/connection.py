@@ -49,6 +49,9 @@ def apply_schema(connection: sqlite3.Connection) -> None:
                 "UPDATE outbound_messages SET proxima_tentativa_em=criado_em "
                 "WHERE status IN ('pendente', 'falhou')"
             )
+        turn_columns = {row[1] for row in connection.execute("PRAGMA table_info(turn_events)")}
+        if "sugestao" not in turn_columns:
+            connection.execute("ALTER TABLE turn_events ADD COLUMN sugestao TEXT")
         connection.commit()
     except Exception:
         connection.rollback()

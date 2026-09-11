@@ -11,7 +11,12 @@ from dataclasses import dataclass, field, replace
 from types import TracebackType
 from typing import Protocol, Self
 
-from application.conversation_ports import ConversationReader, ConversationWriter, MessageWriter
+from application.conversation_ports import (
+    ConversationReader,
+    ConversationWriter,
+    MessageReader,
+    MessageWriter,
+)
 from application.external import ConfigurationError
 from application.media import MediaResolver
 from application.ports import Clock
@@ -65,9 +70,11 @@ class Ingestor:
         capture_cep: Callable[[str], str | None] | None = None,
         media: MediaResolver | None = None,
         media_timeout: float = 10.0,
+        history: MessageReader | None = None,
     ) -> None:
         if not 0 < window < float("inf"):
             raise ValueError("Janela deve ser finita e positiva")
+        self._history = history
         self._media = media
         self._media_timeout = media_timeout
         self._conversations = conversations
@@ -98,6 +105,13 @@ class Ingestor:
     ) -> None:
         self._closed = True
         await self.wait_idle()
+
+    async def next_index(self, conversation_id: str) -> int:
+        """Canal que retoma uma conversa continua a numeração já persistida."""
+        if self._history is None:
+            raise RuntimeError("Histórico de mensagens não configurado")
+        stored = await self._history.messages(conversation_id)
+        return max((message.indice for message in stored), default=-1) + 1
 
     async def ingest(self, message: InboundMessage) -> bool:
         if self._closed:

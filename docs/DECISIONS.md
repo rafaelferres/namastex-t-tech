@@ -683,3 +683,39 @@ máximo 24 h de inatividade) e a chave ficaria no mesmo disco. A purga é o cont
 turno; resta uma cotação indisponível. Turno p50 1,58 s, p99 5,05 s, máximo 8,25 s: 18 s é
 o pior caso, não a espera típica. A retenção de 24 h é parâmetro de `open_sales_stack`; a
 varredura por turno não tem índice em `atualizada_em` e precisa de um se a tabela crescer.
+
+## D-039 — Escada de três níveis, divergência sempre gravada, assunto ligado e CLI
+**Data:** 2026-09-11
+**Contexto:** a revisão da tarefa 11 deixou três lacunas. O cache era descrito como nível
+N2 da escada, mas fica antes do retry: com preço determinístico e TTL até a meia-noite,
+nunca haveria entrada do dia para servir depois de uma falha. A sugestão de escalação do
+conversador só era gravada junto de um handoff, então "o modelo sugeriu e a política não
+escalou" não existia como dado. A regra "fora de escopo" existia, mas nada preenchia o
+assunto. E não havia como conversar com o agente: só o harness o executava.
+**Alternativas:** manter o cache como nível; gravar a divergência numa tabela nova ou em
+`handoffs`; ligar o assunto só pela categoria do modelo ou só por léxico; montar a pilha
+dentro da própria CLI.
+**Decisão:** escada com N0 (chamada direta com hedge), N1 (retry) e N2 (escalação); o
+cache é descrito como camada preventiva. `turn_events` ganha a coluna `sugestao`, e o
+evento `decisao` é gravado em todo turno em que o conversador fala: decisão da política em
+`status`, sugestão do modelo em `sugestao`, inclusive quando ninguém escala. O conversador
+emite `assunto` (enum) no schema strict, e um piso lexical (`domain/scope.py`) fica
+abaixo dele, porque a política pede o dado que falta antes de o conversador falar. A CLI
+(`interfaces.cli`) é adapter sobre os casos de uso. Os buracos que ela expôs foram para a
+aplicação e o wiring, não para a CLI:
+- `Ingestor.next_index`, para retomar uma conversa;
+- `SalesStack.inspector`, a inspeção nas conexões vivas, com a timeline drenada;
+- `open_live_stack`, a composição de produção que o harness fazia à mão.
+**Consequência:** mesma amostra de 150, com o schema novo:
+- divergência 0 em 222 turnos com fala: o modelo nunca sugeriu escalar e a política nunca
+  escalou depois de uma fala;
+- as 33 escalações (31 por documento, 2 por cotação) aconteceram fora dos turnos de fala;
+- a métrica existe, mas o dataset não a exercita: nenhum lead pede humano nem traz
+  assunto fora de escopo;
+- o piso de assunto não dispara em nenhuma mensagem de lead do dataset;
+- conclusão de 72/150 e 72/74 elegíveis sem documento; a diferença para a D-038 é uma
+  cotação indisponível a mais no sorteio.
+
+A CLI mostrou ainda que um `.env` local com os valores da tarefa 8 derruba a conversa por
+limite de tokens: a composição de produção lê o ambiente, e o harness sobrescreve por
+cenário.

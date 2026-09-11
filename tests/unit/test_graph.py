@@ -159,16 +159,22 @@ def test_objection_routes_without_quote_and_next_message_returns(plans_payload, 
         assert result["status"] == "cotada"
 
 
+def said(text, *, objecao="nenhuma", escalacao=None, assunto="seguro_auto"):
+    content = {"texto": text, "escalacao": escalacao, "objecao": objecao, "assunto": assunto}
+    return LLMResponse(json.dumps(content), "m", 1, 2, None, 0)
+
+
 def speaking(*replies):
-    """Texto, (texto, objeção) ou chamada de tool; objeção padrão é "nenhuma"."""
+    """Texto, (texto, objeção), resposta pronta ou chamada de tool."""
     responses = []
     for reply in replies:
         if isinstance(reply, LLMToolCall):
             responses.append(LLMResponse("", "m", 1, 2, None, 0, (reply,)))
-            continue
-        text, objection = reply if isinstance(reply, tuple) else (reply, "nenhuma")
-        content = json.dumps({"texto": text, "escalacao": None, "objecao": objection})
-        responses.append(LLMResponse(content, "m", 1, 2, None, 0))
+        elif isinstance(reply, LLMResponse):
+            responses.append(reply)
+        else:
+            text, objection = reply if isinstance(reply, tuple) else (reply, "nenhuma")
+            responses.append(said(text, objecao=objection))
     return AsyncMock(complete=AsyncMock(side_effect=responses))
 
 
@@ -345,6 +351,60 @@ def test_fast_transient_llm_failure_is_retried(plans_payload, quote_payload):
     assert result["status"] == "ativa"
     assert result["texto"] == "Posso ajudar com a cotação."
     assert leaf.complete.await_count == 2
+
+
+def test_out_of_scope_keyword_escalates_before_asking_for_data(plans_payload, quote_payload):
+    with virtual_time() as clock:
+        graph, _, converse, quote, handoff = build(clock, plans_payload, quote_payload)
+        result = clock.run(graph.turn("c", "m1", "Bati o carro ontem e quero abrir um sinistro"))
+    assert result["status"] == "escalada"
+    assert handoff.call_args.args[2].motivo is HandoffReason.ESCOPO
+    converse.converse.assert_not_called()
+    quote.quote.assert_not_called()
+
+
+def test_model_classified_cancellation_escalates_as_out_of_scope(plans_payload, quote_payload):
+    recorder = Mock()
+    leaf = speaking(said("Entendo.", assunto="cancelamento"))
+    with virtual_time() as clock:
+        graph, _, _, quote, handoff = build(
+            clock, plans_payload, quote_payload, converser=Converser(leaf), recorder=recorder
+        )
+        result = clock.run(graph.turn("c", "m1", "quero parar de pagar isso de vez"))
+    assert result["status"] == "escalada"
+    assert handoff.call_args.args[2].motivo is HandoffReason.ESCOPO
+    quote.quote.assert_not_called()
+    # A política escalou e o modelo não sugeriu: divergência gravada neste sentido.
+    event = recorded(recorder)["decisao"]
+    assert (event.status, event.sugestao) == ("fora_de_escopo", None)
+
+
+def test_normal_message_never_triggers_out_of_scope(plans_payload, quote_payload):
+    recorder = Mock()
+    leaf = speaking("Posso ajudar com a cotação.")
+    with virtual_time() as clock:
+        graph, _, _, _, handoff = build(
+            clock, plans_payload, quote_payload, converser=Converser(leaf), recorder=recorder
+        )
+        result = clock.run(graph.turn("c", "m1", "Oi, queria fazer um seguro pro meu carro"))
+    assert result["status"] == "ativa"
+    handoff.assert_not_called()
+    event = recorded(recorder)["decisao"]
+    assert (event.status, event.sugestao) == ("segue", None)
+
+
+def test_model_suggestion_is_recorded_when_policy_does_not_escalate(plans_payload, quote_payload):
+    recorder = Mock()
+    leaf = speaking(said("Posso ajudar.", escalacao="pedido_de_humano"))
+    with virtual_time() as clock:
+        graph, _, _, _, handoff = build(
+            clock, plans_payload, quote_payload, converser=Converser(leaf), recorder=recorder
+        )
+        result = clock.run(graph.turn("c", "m1", "Oi, queria cotar"))
+    assert result["status"] == "ativa"
+    handoff.assert_not_called()
+    event = recorded(recorder)["decisao"]
+    assert (event.status, event.sugestao) == ("segue", "pedido_de_humano")
 
 
 def test_message_without_objection_does_not_route_to_node(plans_payload, quote_payload):
