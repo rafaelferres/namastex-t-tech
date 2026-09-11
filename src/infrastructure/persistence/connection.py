@@ -1,11 +1,45 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
 
 def apply_schema(connection: sqlite3.Connection) -> None:
-    connection.executescript(Path(__file__).with_name("schema.sql").read_text())
+    schema = Path(__file__).with_name("schema.sql").read_text()
+    # executescript commits implicitly; explicit BEGIN makes DDL and backfill atomic.
+    try:
+        connection.executescript("BEGIN IMMEDIATE;\n" + schema)
+        if not connection.execute("PRAGMA foreign_key_list(quote_attempts)").fetchall():
+            rows = connection.execute(
+                "SELECT conversation_id, min(criado_em) FROM quote_attempts "
+                "WHERE conversation_id NOT IN (SELECT id FROM conversations) "
+                "GROUP BY conversation_id"
+            ).fetchall()
+            for conversation_id, created in rows:
+                identity = hashlib.sha256(conversation_id.encode()).hexdigest()
+                lead_id = "legacy:" + identity
+                connection.execute(
+                    "INSERT OR IGNORE INTO leads VALUES (?, 'legacy', ?, NULL, ?)",
+                    (lead_id, identity, created),
+                )
+                connection.execute(
+                    "INSERT INTO conversations "
+                    "(id, lead_id, status, iniciada_em, atualizada_em) "
+                    "VALUES (?, ?, 'encerrada', ?, ?)",
+                    (conversation_id, lead_id, created, created),
+                )
+            start = schema.index("CREATE TABLE IF NOT EXISTS quote_attempts")
+            statement = schema[start:].split(";", 1)[0]
+            connection.execute(statement.replace("quote_attempts", "quote_attempts_migration", 1))
+            connection.execute("INSERT INTO quote_attempts_migration SELECT * FROM quote_attempts")
+            connection.execute("DROP TABLE quote_attempts")
+            connection.execute("ALTER TABLE quote_attempts_migration RENAME TO quote_attempts")
+            connection.execute("CREATE INDEX idx_attempts_trace ON quote_attempts(trace_id)")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
 
 
 def connect(path: str | Path) -> sqlite3.Connection:

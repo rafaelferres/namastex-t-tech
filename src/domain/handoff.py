@@ -58,6 +58,7 @@ class ConversationContext:
     # Somente o resultado final da cadeia, nunca uma falha intermediária do wire.
     resultado_cotacao: QuoteOutcome | QuoteUnavailable | QuoteContractError | None = None
     pede_desconto: bool = False
+    objecoes_preco: int = 0
     pede_humano: bool = False
     slot_em_esclarecimento: SlotName | None = None
     tentativas_sem_avanco: int = 0
@@ -71,6 +72,8 @@ class ConversationContext:
         object.__setattr__(self, "tentativas", tuple(self.tentativas))
         if self.tentativas_sem_avanco < 0:
             raise ValueError("Tentativas de esclarecimento não podem ser negativas")
+        if self.objecoes_preco < 0:
+            raise ValueError("Contagem de objeções não pode ser negativa")
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,11 +147,21 @@ class CotacaoEsgotada:
         )
 
 
+@dataclass(frozen=True, slots=True)
 class DescontoForaTabela:
-    motivo = HandoffReason.DESCONTO
+    limite: int = 3
+    motivo: ClassVar[HandoffReason] = HandoffReason.DESCONTO
+
+    def __post_init__(self) -> None:
+        if type(self.limite) is not int or self.limite < 1:
+            raise ValueError("Limiar de objeções deve ser inteiro positivo")
 
     def evaluate(self, ctx: ConversationContext) -> HandoffDecision | None:
-        return _decision(ctx, self.motivo) if ctx.pede_desconto else None
+        return (
+            _decision(ctx, self.motivo)
+            if ctx.pede_desconto or ctx.objecoes_preco >= self.limite
+            else None
+        )
 
 
 class PedidoHumano:

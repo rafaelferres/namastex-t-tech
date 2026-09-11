@@ -634,3 +634,43 @@ Medições brutas: `docs/measurements/task6-trace-native.json` e
 `scripts/measure_trace_write.py --help`. Esse custo é local e precisa ser
 remedido no ambiente de execução. Os testes estatísticos usam a marca `slow`;
 o loop de desenvolvimento é `uv run pytest -m "not slow"`.
+
+
+### Ingestão e avaliação offline (tarefa 7)
+
+Envelopes canônicos separam entrada de intenção de saída. A ingestão redige PII,
+deduplica pelo identificador do provedor e agrupa fragmentos por 500 ms de silêncio.
+Cada conversa tem consumo serial. Três turnos com objeção lexical de preço
+acionam o piso determinístico da regra de desconto, mesmo sem sinal do LLM.
+Sete tabelas SQLite guardam identidade de canal pseudonimizada, mensagens redigidas,
+traces com FK, snapshots e intenções de outbox. A outbox ainda não entrega efeitos.
+
+```bash
+uv run python -m interfaces.replay --conversation conv_00013
+uv run python -m tests.golden          # amostra de 48 conversas
+uv run python -m tests.golden --full   # corpus local, 2.500 conversas
+uv run pytest tests/golden tests/regression -m slow -q
+```
+
+`AUTOSEGURO_DATASET` permite escolher o parquet local. Replay ordena por índice e
+somente mensagens do lead chegam ao extrator. O relatório completo encontrou
+**2.500 conversas e 751 inelegíveis**. `NullExtractor` retorna slots ausentes:
+**0% em idade e veículo**, propositalmente; trocar o objeto passado a `evaluate`
+ou `tests.golden.__main__.run` liga o extrator real à mesma métrica.
+A amostra estratificada tem 48 casos, 32 inelegíveis; textos já estão redigidos.
+
+A auditoria dos 2.500 CPFs rotulados no dataset encontrou todos com dígitos válidos,
+**zero falsos positivos e zero falsos negativos**. Casos inválidos são testados
+com entradas sintéticas; o corpus sozinho não demonstra cobertura desses casos.
+Redação de logger cobre também argumentos e traceback após a formatação.
+
+Envelopes e ingestão ainda não extraem slots de cotação. O futuro grafo precisará
+capturar o CEP em estado privado antes da redação, preservando sua imutabilidade.
+A janela é em memória: queda do processo exige recuperação futura de turnos a
+partir das mensagens persistidas. Grafo, LLM, resolução de mídia, webhook,
+console e efeitos da escalação continuam fora desta fase.
+
+Validação da tarefa 7: **381 testes rápidos passaram em 7,79 s**, dez casos slow
+excluídos, Ruff e mypy estrito limpos. O perfil local apontou acesso a arquivos
+como custo dominante: stat consumiu 4,56 s na coleta instrumentada em /mnt/c.
+O modo importlib reduziu a coleta de 4,34 s para 3,61 s sem remover testes.

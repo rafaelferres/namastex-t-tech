@@ -6,8 +6,10 @@ from datetime import UTC, datetime
 import pytest
 
 from application.tracing import QuoteAttempt
+from domain.messages import InboundMessage
 from infrastructure.persistence.attempts import SQLiteAttempts
 from infrastructure.persistence.connection import apply_schema, connect
+from infrastructure.persistence.conversations import SQLiteConversations
 
 
 @pytest.mark.asyncio
@@ -15,10 +17,17 @@ async def test_schema_migrates_cache_and_trace_is_ordered() -> None:
     conn = connect(":memory:")
     try:
         apply_schema(conn)
-        assert conn.execute("PRAGMA foreign_key_list(quote_attempts)").fetchall() == []
+        assert (
+            conn.execute("PRAGMA foreign_key_list(quote_attempts)").fetchone()[2] == "conversations"
+        )
         assert "idx_attempts_trace" in {
             row[1] for row in conn.execute("PRAGMA index_list(quote_attempts)")
         }
+        await SQLiteConversations(conn).ensure(
+            InboundMessage("test", "conv-1", "synthetic", "text", "", "seed", 0),
+            None,
+            datetime(2026, 9, 11),
+        )
         store = SQLiteAttempts(conn)
         event = QuoteAttempt(
             "trace-1",

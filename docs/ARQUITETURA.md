@@ -3,9 +3,10 @@
 Documento técnico do sistema. Para as decisões e seus fundamentos, ver o
 `README.md`. Para as regras que governam alterações de código, ver `AGENTS.md`.
 
-Estado após a Tarefa 5: domínio, HTTP, catálogo, cadeia completa, cache SQLite,
-trace lógico/físico e inspeção CLI estão implementados. Demais tabelas,
-grafo e adapters de entrada ainda são desenho das próximas fases.
+Estado após a Tarefa 7: cotação, apresentação, política, envelopes, ingestão,
+privacidade, sete tabelas SQLite e replay estão implementados. Harness offline
+recebe um extrator intercambiável. Grafo, LLM, resolução de mídia, entrega da
+outbox, webhook e console permanecem desenho das próximas fases.
 
 ---
 
@@ -88,8 +89,32 @@ O envelope carrega **intenção**, não capacidade de canal. "Apresentar cotaç�
 intenção; como isso vira texto puro, painel ou mensagem com botões é problema do
 adapter.
 
-`OutboundMessage` é persistido antes de entregue — é a tabela outbox, e resolve
-entrega duplicada ou perdida se o processo cair entre gravar e enviar.
+`OutboundMessage` carrega Intent e payload tipado (ApresentarCotacao, PedirDado,
+Declined ou HandoffDecision positiva). Não contém fala pronta do canal. A outbox
+persiste essa intenção; seu consumidor e os efeitos de entrega ainda não existem.
+
+`build_ingestor` monta Ingestor, PrivacyRedactor e SQLiteConversations. A entrada
+redige corpo, extrai hash opcional do CPF e descarta referência de mídia antes de
+persistir. Mídia tem status nao_resolvido. O índice único descarta provider_message_id
+repetido. asyncio.Lock protege a entrada por conversa; um worker por conversa
+serializa consumo. A janela configurável de silêncio é 500 ms, usando Clock/sleep
+injetados. IngestedTurn entrega mensagens ordenadas por índice e contador de
+objeções; substitui identidade externa pelo id técnico do lead.
+
+`async with Ingestor` drena no encerramento; wait_idle é a barreira do replay.
+Falha do consumidor preserva o turno em memória para nova tentativa explícita
+de wait_idle, sem duplicar a contagem. Cancelar a barreira aguarda os workers.
+O consumidor deve ser idempotente se produzir efeitos; dedup de entrada não
+garante exatamente uma entrega. Uma queda do processo perde a janela em memória;
+reprocessamento durável dos turnos fica para a orquestração futura.
+
+Replay lê parquet local, filtra mensagens de vendedor e ordena exclusivamente por
+message_index dentro de cada conversa. A CLI aceita --conversation repetido e
+redige a saída; AUTOSEGURO_DATASET substitui o arquivo local padrão. O harness
+em tests/golden recebe somente mensagens redigidas, sem labels, e calcula acurácia
+exata por idade e veiculo_texto. A amostra de 48 conversas é estratificada; o
+corpus completo de 2.500 casos e a auditoria de CPF são slow. O oráculo encontra
+751 recusas com AcceptanceRules e data de referência do próprio dataset (2026).
 
 ---
 
@@ -457,7 +482,11 @@ Implementado em domain/handoff.py: HandoffPolicy avalia a lista de regras na
 ordem da tabela e para na primeira que dispara. LacoEsclarecimento tem limiar
 configurável, padrão três tentativas sem avanço no mesmo slot; o estado futuro
 deve zerar a contagem quando houver progresso. Objeção de preço não equivale a
-pedido explícito de desconto. Os classificadores desses sinais ainda não existem.
+pedido explícito de desconto. Além desse sinal, três turnos com objeção de preço
+acionam DescontoForaTabela independentemente do modelo; limite configurável.
+Ingestor aplica detector lexical ao conjunto dos fragmentos textuais e persiste
+a contagem por conversa. Uma rajada conta no máximo uma objeção. Outros
+classificadores dos sinais conversacionais ainda não existem.
 
 ConversationContext reúne os cinco slots e proveniência digitado/transcrito,
 mídia/resolução, resultado final da cadeia e sinais explícitos. A política retorna
@@ -582,7 +611,13 @@ A chave primária é a **identidade de canal**: `wa_id` no WhatsApp,
 `conversation_id` no replay.
 
 O hash do CPF é atributo opcional, preenchido quando o lead informa
-espontaneamente — não chave, porque o agente não pede CPF.
+espontaneamente — não chave, porque o agente não pede CPF. A chave lógica é
+(channel, channel_user_id). SQLite armazena SHA256 do identificador do canal e
+aplica a mesma transformação na consulta, preservando identidade entre conversas
+sem guardar wa_id/telefone em claro. É pseudonimização, não anonimização. Um CPF
+já conhecido não é substituído silenciosamente. O futuro adapter de entrega
+precisará resolver o endereço do canal em uma fronteira protegida: o hash não
+permite recuperar o destinatário e esta fase não entrega mensagens.
 
 `sender_name` **nunca** é identidade. No histórico, 336 nomes distintos cobrem
 2.500 conversas, e um mesmo nome aparece em até 17 conversas de pessoas diferentes.
@@ -597,7 +632,14 @@ Acontece na ingestão, antes de log, contexto de LLM ou banco.
 - parser case-insensitive e não posicional: o histórico traz "CPF", "Cpf" e "cpf"
   no mesmo corpus, em ordem embaralhada
 
-O console renderiza texto redigido por padrão.
+PrivacyRedactor valida os dois dígitos de CPF e rejeita sequências repetidas.
+Números nus de onze dígitos com CPF inválido não viram telefone sem contexto
+telefônico explícito; formatos telefônicos reconhecíveis são redigidos.
+RedactingFormatter atua após formatação, incluindo args, traceback e stack.
+O wiring envolve handlers existentes do logger raiz; handlers adicionados depois
+ou em loggers sem propagação devem instalar o mesmo formatter.
+
+O console futuro renderiza texto redigido por padrão.
 
 ---
 
@@ -630,13 +672,14 @@ SQLite não tem tipo decimal nem booleano nativo.
 arredondado de forma errada é exatamente o tipo de defeito que a invariante do
 preço existe para evitar.
 
-### Persistência implementada após a Tarefa 5
+### Persistência implementada após a Tarefa 7
 
-`infrastructure/persistence/schema.sql` contém `quote_cache` e `quote_attempts`,
-mais idx_attempts_trace. Cache guarda fingerprint, outcome JSON e expira_em em TEXT.
-quote_attempts.conversation_id ainda não tem FK; ela será adicionada quando a
-tabela conversations existir. O id da linha é UUID e tentativa zero é resolução lógica. `connect` aplica o schema no
-startup e configura os três pragmas. WAL é verificado em arquivo temporário;
+`infrastructure/persistence/schema.sql` contém as sete tabelas abaixo, índices
+de dedup e trace. Cache guarda fingerprint, outcome JSON e expira_em em TEXT.
+quote_attempts.conversation_id tem FK para conversations. O startup migra a
+tabela antiga em transação, preservando traces órfãos por conversas encerradas
+e leads técnicos identificados com canal legacy. Reaplicar é idempotente.
+Tentativa zero é resolução lógica. `connect` aplica schema e três pragmas. WAL é verificado em arquivo temporário;
 SQLite em memória usa journal_mode=memory por limitação do próprio SQLite.
 Decimais são strings no JSON e instantes são ISO-8601 em UTC. Não há request
 ou CEP persistido. Datas ingênuas de SystemClock são interpretadas no fuso local,
@@ -649,8 +692,14 @@ O busy_timeout pode acrescentar até 5 s por disputa de lock, fora do budget do
 retry, além da espera por operações enfileiradas. Antes de prometer 6 s por turno, a aplicação precisa limitar também catálogo
 e cache. Shutdown deve aguardar todos os consumidores antes de fechar a conexão.
 
-O esquema a seguir é o alvo das fases seguintes; as demais tabelas ainda não são
-criadas no startup atual.
+SQLiteConversations implementa portas separadas de leitura/escrita de conversas,
+mensagens e leitura de lead; identidade é validada antes de associar conversa.
+SQLiteDelivery grava/lê intenções de saída e decisões com snapshot; não entrega
+outbox nem dispara efeitos. Campos textuais são redigidos antes da gravação;
+Decimal continua string. Snapshots persistíveis exigem os registros QuoteAttempt
+existentes; implementações desconhecidas do protocolo são rejeitadas antes de
+gravar, evitando dados que não podem ser relidos. Divergência e sugestão do modelo
+ficam no JSON de handoffs.snapshot, inclusive quando a decisão é negativa.
 
 ### Esquema
 
@@ -670,7 +719,8 @@ CREATE TABLE conversations (
   status        TEXT NOT NULL,            -- ativa | cotada | recusada | escalada | encerrada
   slots         TEXT NOT NULL DEFAULT '{}',
   iniciada_em   TEXT NOT NULL,
-  atualizada_em TEXT NOT NULL
+  atualizada_em TEXT NOT NULL,
+  objecoes_preco INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE messages (

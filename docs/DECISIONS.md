@@ -289,3 +289,104 @@ leitura e copia os slots em mapa imutável, redigindo CEP sem alterar o pedido.
 contam como divergência. Integração futura deve fornecer sinais explícitos,
 reiniciar contagem ao avançar e persistir também decisões negativas. A política
 não tenta detectar intenções em texto nem executa efeitos de escalação.
+
+
+## D-018 — Piso de desconto contado por turno
+**Data:** 2026-09-11
+**Contexto:** pedido explícito de desconto pode vir da interpretação do modelo;
+essa não pode ser a única entrada capaz de disparar a política.
+**Alternativas:** escalar na primeira objeção; esperar cinco; usar somente o sinal
+estruturado do extrator; contar cada fragmento como objeção independente.
+**Decisão:** DescontoForaTabela tem limiar configurável padrão três. Ingestor
+reconhece expressões lexicais de preço alto/caro/fora do orçamento no texto unido
+do turno, independentemente de LLM. Negações simples de caro são excluídas.
+Cada turno soma no máximo um; duplicatas não somam. Contagem vive na conversa.
+**Consequência:** três evita escalar a primeira objeção comum e limita insistência;
+a regra não pretende compreender ironia ou toda paráfrase. Sinal explícito continua
+válido antes do piso. Reexecução do mesmo turno após falha não incrementa novamente.
+
+## D-019 — Identidade de canal pseudonimizada e CPF apenas como atributo
+**Data:** 2026-09-11
+**Contexto:** a tarefa 7 e a seção 11 superam a antiga chave CPF do AGENTS.
+wa_id é também telefone; persistir identidade literal conflita com redação de PII.
+**Alternativas:** guardar wa_id em claro; criptografar endereço desde já;
+chave estável derivada da identidade sem armazenar endereço de entrega nesta fase.
+**Decisão:** a chave lógica é (channel, channel_user_id). O repositório transforma
+o segundo componente em SHA256 na escrita e consulta; UNIQUE usa esse par.
+O consumidor recebe id técnico do lead. CPF válido informado espontaneamente
+gera SHA256 dos onze dígitos; não é chave e não substitui valor já conhecido
+silenciosamente. Nome não participa da identidade. AGENTS foi corrigido.
+**Consequência:** hash é pseudonimização, não anonimização nem criptografia de
+endereços. A entrega futura precisará resolver destino numa fronteira protegida;
+esta outbox ainda não envia mensagens e não recupera wa_id a partir do hash.
+CPF inválido nu não é convertido em telefone sem contexto; testes sintéticos
+cobrem essa ambiguidade. Auditoria dos 2.500 spans CPF do dataset: todos válidos,
+zero falso positivo/negativo frente aos rótulos independentes do gerador.
+
+## D-020 — Rajada por silêncio, consumo serial e cancelamento após aceite
+**Data:** 2026-09-11
+**Contexto:** fragmentos não devem produzir respostas concorrentes. Dedup durável
+não pode transformar cancelamento entre commit e fila em mensagem sem consumo.
+**Alternativas:** janela fixa desde primeiro fragmento; debounce por silêncio;
+segurar o mesmo lock durante entrada e todo consumo; fila durável de turnos.
+**Decisão:** janela de silêncio configurável de 500 ms, com Clock/sleep injetados.
+Lock por conversa protege entrada/estado; worker único serializa consumo e libera
+o lock enquanto chama o consumidor. Aceite (persistir e enfileirar) é protegido
+contra cancelamento do chamador. async with drena ao sair; wait_idle também
+serve ao replay e aguarda workers ao ser cancelado. Falha do consumidor preserva
+o turno pronto em memória, com o contador já calculado, para repetir wait_idle.
+**Consequência:** outras conversas avançam independentemente. Erros não são
+engolidos. Consumidor deve ser idempotente se produzir efeitos; o fluxo não
+promete exactly-once. Crash perde agrupamentos em memória apesar de preservar
+mensagens; recuperação de turnos em processo novo fica para orquestração futura.
+CEP é redigido no texto; antes do futuro grafo será necessário extrair seu slot
+privado na fronteira de entrada, mantendo-o fora do prompt/log. Esta fase só
+prepara avaliação de idade e veículo; não extrai slots reais de cotação.
+
+## D-021 — Evolução SQLite sem apagar evidências anteriores
+**Data:** 2026-09-11
+**Contexto:** traces da tarefa 5 não tinham FK e podem existir sem conversa.
+Adicionar a restrição sem backfill perderia registros ou impediria startup.
+**Alternativas:** descartar traces antigos; recusar arquivos antigos;
+reconstruir tabela e criar identidade técnica explicitamente legada.
+**Decisão:** startup transacional recria quote_attempts com FK e preserva linhas;
+conversas órfãs ficam encerradas, com leads técnicos no canal legacy. Índice de
+trace é recriado e reaplicar é idempotente. Sete tabelas agora existem.
+Outbox armazena intenção/payload tipado e handoffs guarda também opinião/divergência.
+Campos textuais de snapshots e recusas são redigidos na serialização, sem alterar
+Decimal. Snapshot persistido aceita registros QuoteAttempt reais da tabela;
+outras implementações do protocolo são rejeitadas antes de escrever.
+**Consequência:** migração não inventa dados pessoais de leads históricos. O
+protocolo de leitura do domínio permanece amplo, mas o adapter exige uma forma
+persistível conhecida. Entrega, retry da outbox e efeitos continuam fora do escopo.
+
+## D-022 — Avaliação sem vazamento de gabarito
+**Data:** 2026-09-11
+**Contexto:** o harness deve ser utilizável antes do extrator e não pode produzir
+acurácia artificial usando o próprio gabarito como entrada.
+**Alternativas:** fake oracular retornando labels; regex experimental; placeholder
+que retorna campos ausentes e métricas testadas com exemplos independentes.
+**Decisão:** Extractor recebe somente tupla de mensagens redigidas do lead. Labels
+ficam em Case fora do argumento de extração. NullExtractor retorna ausência:
+0% em idade e veiculo_texto é esperado e não mede qualidade de linguagem.
+48 casos versionados são os dois menores IDs por estrato de aceitação/recusa,
+mídia, presença de CEP e desfecho. Corpus completo local é slow. Referência do
+oráculo é a data da mensagem índice zero (2026), nunca relógio de execução.
+**Consequência:** mesma métrica serve à amostra e aos 2.500 casos; foram encontradas
+751 recusas. Ausência do parquet local causa skip explícito dos testes completos.
+O oráculo ainda não prova comportamento ponta a ponta de agente sem preço; isso
+virá quando o grafo existir. Dados brutos permanecem fora do git.
+
+
+## D-023 — Importação de testes medida no workspace montado
+**Data:** 2026-09-11
+**Contexto:** suíte rápida de 381 testes levou 8,36 s em /mnt/c. Perfil da coleta:
+2.763 chamadas stat consumiram 4,564 s de 6,759 s instrumentados; o custo é
+majoritariamente acesso ao sistema de arquivos, não espera das regras/ingestão.
+**Alternativas:** manter modo prepend; remover testes do loop; usar importlib.
+**Decisão:** pytest usa --import-mode=importlib. Coleta isolada caiu de 4,34 s
+para 3,61 s; os mesmos 381 testes passaram em 7,79 s após a alteração. Dez casos
+slow permanecem separados (oito estatísticos, corpus e auditoria CPF).
+**Consequência:** ganho local modesto, sem retirar cobertura ou desabilitar
+assertions. O tempo continua dominado pelo workspace montado; não prometemos
+que a mudança transforma este ambiente em um loop de dois segundos.

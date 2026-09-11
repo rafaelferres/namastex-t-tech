@@ -1,0 +1,739 @@
+[
+  {
+    "conversation_id": "conv_00136",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "e um Creta 2024",
+      "Tenho 79 anos, cpf [CPF], cep [CEP]",
+      "to no aguardo",
+      "a franquia ta alta",
+      "pode mandar sim"
+    ],
+    "idade": 79,
+    "veiculo_texto": "Hyundai Creta 2024",
+    "reference_date": "2026-03-06",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00143",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "Corolla Cross, ano 2016",
+      "Tenho 78 anos, cep [CEP], cpf [CPF]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "a placa é [PLACA] se precisar",
+      "vi mais barato na concorrente",
+      "pode mandar sim"
+    ],
+    "idade": 78,
+    "veiculo_texto": "Toyota Corolla Cross 2016",
+    "reference_date": "2026-04-06",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00186",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "e um HB20 2015",
+      "Cpf [CPF], tenho 76 anos, cep [CEP]",
+      "to no aguardo",
+      "pode emitir entao"
+    ],
+    "idade": 76,
+    "veiculo_texto": "Hyundai HB20 2015",
+    "reference_date": "2026-02-26",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00188",
+    "messages": [
+      "Ola! Vi o anuncio de voces, quanto fica o seguro?",
+      "T-Cross, ano 2001",
+      "Tenho 80 anos, cep [CEP], cpf [CPF]",
+      "qualquer coisa me chama",
+      "vamos nessa, gostei"
+    ],
+    "idade": 80,
+    "veiculo_texto": "Volkswagen T-Cross 2001",
+    "reference_date": "2026-04-28",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00037",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "Mobi, ano 2008",
+      "Cpf [CPF], cep [CEP], tenho 81 anos",
+      "qualquer coisa me chama",
+      "o preco ta salgado... a Azul Seguros me ofereceu menos",
+      "vou ficar com a outra"
+    ],
+    "idade": 81,
+    "veiculo_texto": "Fiat Mobi 2008",
+    "reference_date": "2026-02-03",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00080",
+    "messages": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "e um Tracker 2008",
+      "Cpf [CPF], cep [CEP], tenho 76 anos",
+      "a placa é [PLACA] se precisar",
+      "vi mais barato na concorrente... a Bradesco Auto me ofereceu menos",
+      "nao precisa, obrigado"
+    ],
+    "idade": 76,
+    "veiculo_texto": "Chevrolet Tracker 2008",
+    "reference_date": "2026-05-06",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00044",
+    "messages": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "Volkswagen Gol 2023",
+      "Cep [CEP], tenho 82 anos, cpf [CPF]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "to no aguardo"
+    ],
+    "idade": 82,
+    "veiculo_texto": "Volkswagen Gol 2023",
+    "reference_date": "2026-03-27",
+    "outcome": "sem_resposta"
+  },
+  {
+    "conversation_id": "conv_00138",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "Corolla, ano 2019",
+      "Tenho 82 anos, cep [CEP], cpf [CPF]",
+      "qualquer coisa me chama"
+    ],
+    "idade": 82,
+    "veiculo_texto": "Toyota Corolla 2019",
+    "reference_date": "2026-04-08",
+    "outcome": "sem_resposta"
+  },
+  {
+    "conversation_id": "conv_00056",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "e um City 2002",
+      "Tenho 78 anos, cpf [CPF], cep [CEP]",
+      "[imagem] foto do veiculo na garagem",
+      "a placa é [PLACA] se precisar",
+      "a franquia ta alta",
+      "pode mandar sim"
+    ],
+    "idade": 78,
+    "veiculo_texto": "Honda City 2002",
+    "reference_date": "2026-03-24",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00253",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "HR-V, ano 2022",
+      "Cep [CEP], tenho 79 anos, cpf [CPF]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "[documento] CNH_frente.pdf",
+      "[audio] mensagem de voz (18s)",
+      "qualquer coisa me chama",
+      "o preco ta salgado",
+      "pode mandar sim"
+    ],
+    "idade": 79,
+    "veiculo_texto": "Honda HR-V 2022",
+    "reference_date": "2026-01-09",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00018",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "e um Corolla 2016",
+      "Tenho 77 anos, cep [CEP], cpf [CPF]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "[documento] CNH_frente.pdf",
+      "qualquer coisa me chama",
+      "vamos nessa, gostei"
+    ],
+    "idade": 77,
+    "veiculo_texto": "Toyota Corolla 2016",
+    "reference_date": "2026-03-02",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00095",
+    "messages": [
+      "Ola! Vi o anuncio de voces, quanto fica o seguro?",
+      "e um Civic 2008",
+      "Cep [CEP], tenho 80 anos, cpf [CPF]",
+      "[imagem] foto do veiculo na garagem",
+      "to no aguardo",
+      "vamos nessa, gostei"
+    ],
+    "idade": 80,
+    "veiculo_texto": "Honda Civic 2008",
+    "reference_date": "2026-03-01",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00033",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "e um Kwid 2024",
+      "Cpf [CPF], cep [CEP], tenho 78 anos",
+      "[documento] CNH_frente.pdf",
+      "[imagem] foto do veiculo na garagem",
+      "to no aguardo",
+      "achei caro pra esse carro... a Azul Seguros me ofereceu menos",
+      "vou ficar com a outra"
+    ],
+    "idade": 78,
+    "veiculo_texto": "Renault Kwid 2024",
+    "reference_date": "2026-03-04",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00084",
+    "messages": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "HB20, ano 2016",
+      "Tenho 78 anos, cpf [CPF], cep [CEP]",
+      "[documento] CNH_frente.pdf",
+      "to no aguardo",
+      "o preco ta salgado... a Itau Auto me ofereceu menos",
+      "nao precisa, obrigado"
+    ],
+    "idade": 78,
+    "veiculo_texto": "Hyundai HB20 2016",
+    "reference_date": "2026-02-06",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00008",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "Honda HR-V 2008",
+      "Cpf [CPF], tenho 78 anos, cep [CEP]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "[audio] mensagem de voz (18s)",
+      "to no aguardo"
+    ],
+    "idade": 78,
+    "veiculo_texto": "Honda HR-V 2008",
+    "reference_date": "2026-03-03",
+    "outcome": "sem_resposta"
+  },
+  {
+    "conversation_id": "conv_00011",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "e um Duster 2023",
+      "Cpf [CPF], tenho 79 anos, cep [CEP]",
+      "[imagem] foto do veiculo na garagem",
+      "[audio] mensagem de voz (18s)",
+      "qualquer coisa me chama"
+    ],
+    "idade": 79,
+    "veiculo_texto": "Renault Duster 2023",
+    "reference_date": "2026-05-12",
+    "outcome": "sem_resposta"
+  },
+  {
+    "conversation_id": "conv_00065",
+    "messages": [
+      "Ola! Vi o anuncio de voces, quanto fica o seguro?",
+      "e um Sandero 2005",
+      "Tenho 72 anos, cep [CEP], cpf [CPF]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "to no aguardo",
+      "achei caro pra esse carro",
+      "pode mandar sim"
+    ],
+    "idade": 72,
+    "veiculo_texto": "Renault Sandero 2005",
+    "reference_date": "2026-05-25",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00067",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Duster, ano 2002",
+      "Tenho 30 anos, cep [CEP], cpf [CPF]",
+      "qualquer coisa me chama",
+      "vou ver com minha esposa",
+      "pode mandar sim"
+    ],
+    "idade": 30,
+    "veiculo_texto": "Renault Duster 2002",
+    "reference_date": "2026-02-17",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00196",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "e um Onix 2005",
+      "Tenho 39 anos, cep [CEP], cpf [CPF]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "to no aguardo",
+      "fechado!"
+    ],
+    "idade": 39,
+    "veiculo_texto": "Chevrolet Onix 2005",
+    "reference_date": "2026-01-18",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00313",
+    "messages": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "e um Civic 2005",
+      "Tenho 31 anos, cpf [CPF], cep [CEP]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "to no aguardo",
+      "vamos nessa, gostei"
+    ],
+    "idade": 31,
+    "veiculo_texto": "Honda Civic 2005",
+    "reference_date": "2026-02-07",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00149",
+    "messages": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "Compass, ano 2002",
+      "Cep [CEP], cpf [CPF], tenho 32 anos",
+      "a placa é [PLACA] se precisar",
+      "vi mais barato na concorrente... a Azul Seguros me ofereceu menos",
+      "deixa pra la por enquanto"
+    ],
+    "idade": 32,
+    "veiculo_texto": "Jeep Compass 2002",
+    "reference_date": "2026-01-13",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00205",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "City, ano 2002",
+      "Cpf [CPF], cep [CEP], tenho 63 anos",
+      "to no aguardo",
+      "o preco ta salgado... a Itau Auto me ofereceu menos",
+      "vou ficar com a outra"
+    ],
+    "idade": 63,
+    "veiculo_texto": "Honda City 2002",
+    "reference_date": "2026-02-14",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00047",
+    "messages": [
+      "Ola! Vi o anuncio de voces, quanto fica o seguro?",
+      "e um Cronos 2003",
+      "Cpf [CPF], cep [CEP], tenho 37 anos",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "qualquer coisa me chama"
+    ],
+    "idade": 37,
+    "veiculo_texto": "Fiat Cronos 2003",
+    "reference_date": "2026-04-11",
+    "outcome": "sem_resposta"
+  },
+  {
+    "conversation_id": "conv_00089",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Compass, ano 2001",
+      "Tenho 67 anos, cpf [CPF], cep [CEP]",
+      "a placa é [PLACA] se precisar"
+    ],
+    "idade": 67,
+    "veiculo_texto": "Jeep Compass 2001",
+    "reference_date": "2026-01-12",
+    "outcome": "sem_resposta"
+  },
+  {
+    "conversation_id": "conv_00034",
+    "messages": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "Hyundai Creta 2002",
+      "Cpf [CPF], tenho 71 anos, cep [CEP]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "[audio] mensagem de voz (18s)",
+      "qualquer coisa me chama",
+      "preciso pensar",
+      "pode mandar sim"
+    ],
+    "idade": 71,
+    "veiculo_texto": "Hyundai Creta 2002",
+    "reference_date": "2026-02-10",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00083",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "Cronos, ano 2005",
+      "Cpf [CPF], tenho 57 anos, cep [CEP]",
+      "[audio] mensagem de voz (18s)",
+      "qualquer coisa me chama",
+      "achei caro pra esse carro",
+      "pode mandar sim"
+    ],
+    "idade": 57,
+    "veiculo_texto": "Fiat Cronos 2005",
+    "reference_date": "2026-05-21",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00010",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "City, ano 2002",
+      "Cpf [CPF], cep [CEP], tenho 35 anos",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "[documento] CNH_frente.pdf",
+      "to no aguardo",
+      "vamos nessa, gostei"
+    ],
+    "idade": 35,
+    "veiculo_texto": "Honda City 2002",
+    "reference_date": "2026-02-26",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00086",
+    "messages": [
+      "Ola! Vi o anuncio de voces, quanto fica o seguro?",
+      "Fiat Pulse 2001",
+      "Cpf [CPF], cep [CEP], tenho 37 anos",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "[documento] CNH_frente.pdf",
+      "qualquer coisa me chama",
+      "pode emitir entao"
+    ],
+    "idade": 37,
+    "veiculo_texto": "Fiat Pulse 2001",
+    "reference_date": "2026-03-21",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00053",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "Kwid, ano 2005",
+      "Cpf [CPF], cep [CEP], tenho 19 anos",
+      "[documento] CNH_frente.pdf",
+      "to no aguardo",
+      "preciso pensar... a Porto Seguro me ofereceu menos",
+      "vou ficar com a outra"
+    ],
+    "idade": 19,
+    "veiculo_texto": "Renault Kwid 2005",
+    "reference_date": "2026-05-03",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00145",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "Fiat Toro 2001",
+      "Tenho 49 anos, cep [CEP], cpf [CPF]",
+      "[imagem] foto do veiculo na garagem",
+      "a placa é [PLACA] se precisar",
+      "preciso pensar... a Porto Seguro me ofereceu menos",
+      "deixa pra la por enquanto"
+    ],
+    "idade": 49,
+    "veiculo_texto": "Fiat Toro 2001",
+    "reference_date": "2026-04-24",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00035",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "Hyundai HB20 2004",
+      "Cpf [CPF], cep [CEP], tenho 55 anos",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "[documento] CNH_frente.pdf",
+      "qualquer coisa me chama"
+    ],
+    "idade": 55,
+    "veiculo_texto": "Hyundai HB20 2004",
+    "reference_date": "2026-04-18",
+    "outcome": "sem_resposta"
+  },
+  {
+    "conversation_id": "conv_00055",
+    "messages": [
+      "Ola! Vi o anuncio de voces, quanto fica o seguro?",
+      "Nivus, ano 2001",
+      "Tenho 23 anos, cep [CEP], cpf [CPF]",
+      "[documento] CNH_frente.pdf",
+      "a placa é [PLACA] se precisar"
+    ],
+    "idade": 23,
+    "veiculo_texto": "Volkswagen Nivus 2001",
+    "reference_date": "2026-01-24",
+    "outcome": "sem_resposta"
+  },
+  {
+    "conversation_id": "conv_00007",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "Tracker, ano 2018",
+      "Cpf [CPF], cep [CEP], tenho 24 anos",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "qualquer coisa me chama",
+      "preciso pensar",
+      "pode mandar sim"
+    ],
+    "idade": 24,
+    "veiculo_texto": "Chevrolet Tracker 2018",
+    "reference_date": "2026-01-25",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00028",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "Renault Kwid 2011",
+      "Cep [CEP], tenho 31 anos, cpf [CPF]",
+      "a placa é [PLACA] se precisar",
+      "achei caro pra esse carro",
+      "pode mandar sim"
+    ],
+    "idade": 31,
+    "veiculo_texto": "Renault Kwid 2011",
+    "reference_date": "2026-02-27",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00000",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Toyota Corolla 2008",
+      "Tenho 35 anos, cep [CEP], cpf [CPF]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "qualquer coisa me chama",
+      "fechado!"
+    ],
+    "idade": 35,
+    "veiculo_texto": "Toyota Corolla 2008",
+    "reference_date": "2026-01-22",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00001",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Sandero, ano 2022",
+      "Cep [CEP], cpf [CPF], tenho 30 anos",
+      "qualquer coisa me chama",
+      "vamos nessa, gostei"
+    ],
+    "idade": 30,
+    "veiculo_texto": "Renault Sandero 2022",
+    "reference_date": "2026-04-20",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00003",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "e um Corolla 2010",
+      "Cep [CEP], tenho 61 anos, cpf [CPF]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "to no aguardo",
+      "achei caro pra esse carro... a Porto Seguro me ofereceu menos",
+      "vou ficar com a outra"
+    ],
+    "idade": 61,
+    "veiculo_texto": "Toyota Corolla 2010",
+    "reference_date": "2026-01-03",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00004",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "HB20, ano 2019",
+      "Tenho 22 anos, cpf [CPF], cep [CEP]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "to no aguardo",
+      "a franquia ta alta... a Bradesco Auto me ofereceu menos",
+      "vou ficar com a outra"
+    ],
+    "idade": 22,
+    "veiculo_texto": "Hyundai HB20 2019",
+    "reference_date": "2026-01-03",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00054",
+    "messages": [
+      "Ola! Vi o anuncio de voces, quanto fica o seguro?",
+      "e um HB20 2011",
+      "Cpf [CPF], cep [CEP], tenho 23 anos",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "qualquer coisa me chama"
+    ],
+    "idade": 23,
+    "veiculo_texto": "Hyundai HB20 2011",
+    "reference_date": "2026-01-06",
+    "outcome": "sem_resposta"
+  },
+  {
+    "conversation_id": "conv_00069",
+    "messages": [
+      "Boa tarde, quero uma cotacao",
+      "e um Creta 2014",
+      "Cep [CEP], cpf [CPF], tenho 39 anos",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "a placa é [PLACA] se precisar"
+    ],
+    "idade": 39,
+    "veiculo_texto": "Hyundai Creta 2014",
+    "reference_date": "2026-02-23",
+    "outcome": "sem_resposta"
+  },
+  {
+    "conversation_id": "conv_00009",
+    "messages": [
+      "Ola! Vi o anuncio de voces, quanto fica o seguro?",
+      "e um HB20 2018",
+      "Tenho 50 anos, cpf [CPF], cep [CEP]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "[audio] mensagem de voz (18s)",
+      "to no aguardo",
+      "preciso pensar",
+      "pode mandar sim"
+    ],
+    "idade": 50,
+    "veiculo_texto": "Hyundai HB20 2018",
+    "reference_date": "2026-04-18",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00015",
+    "messages": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "Creta, ano 2016",
+      "Tenho 55 anos, cpf [CPF], cep [CEP]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "[documento] CNH_frente.pdf",
+      "a placa é [PLACA] se precisar",
+      "o preco ta salgado",
+      "pode mandar sim"
+    ],
+    "idade": 55,
+    "veiculo_texto": "Hyundai Creta 2016",
+    "reference_date": "2026-04-21",
+    "outcome": "em_negociacao"
+  },
+  {
+    "conversation_id": "conv_00013",
+    "messages": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "e um Corolla 2024",
+      "Tenho 41 anos, cep [CEP], cpf [CPF]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "[documento] CNH_frente.pdf",
+      "[audio] mensagem de voz (18s)",
+      "a placa é [PLACA] se precisar",
+      "fechado!"
+    ],
+    "idade": 41,
+    "veiculo_texto": "Toyota Corolla 2024",
+    "reference_date": "2026-03-03",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00020",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Hyundai Creta 2010",
+      "Cep [CEP], tenho 63 anos, cpf [CPF]",
+      "[audio] mensagem de voz (18s)",
+      "to no aguardo",
+      "fechado!"
+    ],
+    "idade": 63,
+    "veiculo_texto": "Hyundai Creta 2010",
+    "reference_date": "2026-02-17",
+    "outcome": "ganho"
+  },
+  {
+    "conversation_id": "conv_00002",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Pulse, ano 2008",
+      "Tenho 55 anos, cpf [CPF], cep [CEP]",
+      "[documento] CNH_frente.pdf",
+      "[imagem] foto do veiculo na garagem",
+      "[audio] mensagem de voz (18s)",
+      "a placa é [PLACA] se precisar",
+      "preciso pensar... a SulAmerica me ofereceu menos",
+      "nao precisa, obrigado"
+    ],
+    "idade": 55,
+    "veiculo_texto": "Fiat Pulse 2008",
+    "reference_date": "2026-01-08",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00012",
+    "messages": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "Renault Sandero 2013",
+      "Cpf [CPF], tenho 46 anos, cep [CEP]",
+      "[imagem] foto do veiculo na garagem",
+      "a placa é [PLACA] se precisar",
+      "a franquia ta alta... a SulAmerica me ofereceu menos",
+      "vou ficar com a outra"
+    ],
+    "idade": 46,
+    "veiculo_texto": "Renault Sandero 2013",
+    "reference_date": "2026-04-11",
+    "outcome": "perdido"
+  },
+  {
+    "conversation_id": "conv_00005",
+    "messages": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Renault Duster 2011",
+      "Tenho 50 anos, cep [CEP], cpf [CPF]",
+      "meu email é [EMAIL] e o whats é esse mesmo [TELEFONE]",
+      "[documento] CNH_frente.pdf",
+      "qualquer coisa me chama"
+    ],
+    "idade": 50,
+    "veiculo_texto": "Renault Duster 2011",
+    "reference_date": "2026-05-13",
+    "outcome": "sem_resposta"
+  },
+  {
+    "conversation_id": "conv_00019",
+    "messages": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "Honda City 2011",
+      "Cpf [CPF], cep [CEP], tenho 21 anos",
+      "[audio] mensagem de voz (18s)",
+      "qualquer coisa me chama"
+    ],
+    "idade": 21,
+    "veiculo_texto": "Honda City 2011",
+    "reference_date": "2026-04-12",
+    "outcome": "sem_resposta"
+  }
+]

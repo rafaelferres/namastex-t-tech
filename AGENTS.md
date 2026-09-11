@@ -92,7 +92,9 @@ Antes de qualquer coisa tocar log, contexto de LLM ou banco.
 - CPF com validação de dígito verificador (regex sozinho gera falso positivo)
 - e-mail, telefone, placa, CEP completo
 - processador de redação no logger, para não vazar em traceback
-- a chave do lead é o **hash do CPF** — nunca `sender_name` (ver armadilhas)
+- a chave lógica do lead é **(channel, channel_user_id)** — nunca `sender_name`
+- CPF informado espontaneamente é hash opcional, nunca chave; identidade de canal
+  é pseudonimizada na persistência (ver arquitetura, seção 11)
 
 ## Arquitetura
 
@@ -300,7 +302,7 @@ docker compose up --build            # http://localhost:8000
 # desenvolvimento
 uv sync
 uv run pytest                        # unitários + integração, offline
-uv run pytest tests/unit -q          # loop de TDD, roda em segundos
+uv run pytest -m "not slow"         # loop de TDD, sem corpus completo/simulações
 uv run pytest --cov=src --cov-report=term-missing
 uv run ruff check src tests
 uv run mypy src

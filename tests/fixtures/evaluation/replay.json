@@ -1,0 +1,42 @@
+[
+  {
+    "conversation_id": "conv_00001",
+    "message_index": 0,
+    "timestamp": "2026-04-20T15:38:00",
+    "sender_role": "lead",
+    "message_type": "text",
+    "message_body": "Oi, queria fazer um seguro pro meu carro"
+  },
+  {
+    "conversation_id": "conv_00001",
+    "message_index": 2,
+    "timestamp": "2026-04-20T15:50:00",
+    "sender_role": "lead",
+    "message_type": "text",
+    "message_body": "Sandero, ano 2022"
+  },
+  {
+    "conversation_id": "conv_00001",
+    "message_index": 4,
+    "timestamp": "2026-04-20T16:06:00",
+    "sender_role": "lead",
+    "message_type": "text",
+    "message_body": "Cep [CEP], cpf [CPF], tenho 30 anos"
+  },
+  {
+    "conversation_id": "conv_00001",
+    "message_index": 5,
+    "timestamp": "2026-04-20T15:48:00",
+    "sender_role": "lead",
+    "message_type": "text",
+    "message_body": "qualquer coisa me chama"
+  },
+  {
+    "conversation_id": "conv_00001",
+    "message_index": 7,
+    "timestamp": "2026-04-20T16:34:00",
+    "sender_role": "lead",
+    "message_type": "text",
+    "message_body": "vamos nessa, gostei"
+  }
+]
