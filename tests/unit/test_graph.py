@@ -10,13 +10,15 @@ from agent.graph import SalesGraph, TurnConfig
 from agent.nodes.converse import ConversationResult, Converser
 from agent.nodes.extract import ExtractionResult
 from agent.schemas.slots import Slots
-from agent.templates import render_safe_reply
+from agent.templates import render_objection, render_safe_reply
 from application.llm import LLMResponse, LLMToolCall
 from domain.acceptance import AcceptanceRules
 from domain.handoff import HandoffReason
+from domain.objection import Objecao
 from domain.product import ProductFacts
 from domain.quote import Quote, QuoteUnavailable
 from tests.fakes import CANONICAL_OBJECTIONS
+from tests.unit.test_objection import EXPECTED
 from tests.virtual_time import virtual_time
 
 FACTS = (ProductFacts("completo", "Completo", ("roubo", "furto", "colisao"), True),)
@@ -55,7 +57,7 @@ def build(
     quote = AsyncMock(quote=AsyncMock(return_value=outcome or Quote.from_api(quote_payload)))
     rules = AsyncMock(current=AsyncMock(return_value=AcceptanceRules.from_api(plans_payload)))
     handoff = AsyncMock()
-    traces = AsyncMock(read=AsyncMock(return_value=()))
+    traces = AsyncMock(read_conversation=AsyncMock(return_value=()))
     graph = SalesGraph(
         extractor=extractor,
         converser=converser,
@@ -144,7 +146,11 @@ def test_quote_failure_handoff_has_slots(plans_payload, quote_payload):
 
 def test_objection_routes_without_quote_and_next_message_returns(plans_payload, quote_payload):
     with virtual_time() as clock:
-        graph, _, _, quote, _ = build(clock, plans_payload, quote_payload)
+        graph, _, converse, quote, _ = build(clock, plans_payload, quote_payload)
+        converse.converse.side_effect = [
+            ConversationResult("Entendo.", None),
+            ConversationResult("", None, "completo"),
+        ]
         result = clock.run(graph.turn("c", "m1", "Está caro", objecoes_preco=1))
         assert result["status"] == "ativa"
         assert "objection" in result["rota"]
@@ -154,12 +160,15 @@ def test_objection_routes_without_quote_and_next_message_returns(plans_payload, 
 
 
 def speaking(*replies):
-    responses = [
-        LLMResponse("", "m", 1, 2, None, 0, (reply,))
-        if isinstance(reply, LLMToolCall)
-        else LLMResponse(json.dumps({"texto": reply, "escalacao": None}), "m", 1, 2, None, 0)
-        for reply in replies
-    ]
+    """Texto, (texto, objeção) ou chamada de tool; objeção padrão é "nenhuma"."""
+    responses = []
+    for reply in replies:
+        if isinstance(reply, LLMToolCall):
+            responses.append(LLMResponse("", "m", 1, 2, None, 0, (reply,)))
+            continue
+        text, objection = reply if isinstance(reply, tuple) else (reply, "nenhuma")
+        content = json.dumps({"texto": text, "escalacao": None, "objecao": objection})
+        responses.append(LLMResponse(content, "m", 1, 2, None, 0))
     return AsyncMock(complete=AsyncMock(side_effect=responses))
 
 
@@ -205,3 +214,45 @@ def test_invalid_plan_from_model_is_contract_event_not_refusal(plans_payload, qu
     assert result["status"] == "ativa"
     assert result["texto"] == render_safe_reply(FACTS)
     assert recorded(recorder)["converse"].erro == "contrato_llm"
+
+
+OBJECTION_TEXTS = [
+    *CANONICAL_OBJECTIONS,
+    *(f"{text}... a Porto Seguro me ofereceu menos" for text in CANONICAL_OBJECTIONS),
+]
+
+
+@pytest.mark.parametrize("text", OBJECTION_TEXTS)
+def test_objection_reaches_node_through_floor_when_model_says_none(
+    plans_payload, quote_payload, text
+):
+    with virtual_time() as clock:
+        graph, _, _, quote, _ = build(
+            clock, plans_payload, quote_payload, converser=Converser(speaking("Entendo."))
+        )
+        result = clock.run(graph.turn("c", "m1", text))
+    category = EXPECTED[text.split("...")[0]]
+    assert result["rota"][-1] == "objection"
+    assert (result["objecao"], result["objecao_fonte"]) == (category.value, "lexico")
+    assert result["texto"] == render_objection(category)
+    quote.quote.assert_not_called()
+
+
+def test_model_classified_objection_without_keyword_reaches_node(plans_payload, quote_payload):
+    leaf = speaking(("Entendo.", "preco_alto"))
+    with virtual_time() as clock:
+        graph, *_ = build(clock, plans_payload, quote_payload, converser=Converser(leaf))
+        result = clock.run(graph.turn("c", "m1", "esperava pagar menos"))
+    assert result["rota"][-1] == "objection"
+    assert (result["objecao"], result["objecao_fonte"]) == ("preco_alto", "modelo")
+    assert result["texto"] == render_objection(Objecao.PRECO_ALTO)
+
+
+def test_message_without_objection_does_not_route_to_node(plans_payload, quote_payload):
+    leaf = speaking("Posso ajudar com a cotação.")
+    with virtual_time() as clock:
+        graph, *_ = build(clock, plans_payload, quote_payload, converser=Converser(leaf))
+        result = clock.run(graph.turn("c", "m1", "Oi, queria fazer um seguro pro meu carro"))
+    assert "objection" not in result["rota"]
+    assert result["objecao"] is None
+    assert result["texto"] == "Posso ajudar com a cotação."

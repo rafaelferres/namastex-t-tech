@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 
-from agent.nodes.extract import SlotExtractor
+from agent.graph import SalesGraph, TurnConfig
+from agent.nodes.converse import Converser
+from agent.nodes.extract import SlotExtractor, capture_private_cep
 from application.ingest import IngestedTurn, Ingestor
 from application.inspect_trace import InspectQuoteTrace
 from application.llm import LLMClient
@@ -19,14 +22,22 @@ from application.ports import (
     QuoteCache,
     QuoteProvider,
 )
-from application.tracing import CorrelationProvider
+from application.sales import SalesSession
+from application.tracing import Correlation, CorrelationProvider, current_turn
+from domain.handoff import HandoffDecision
 from infrastructure.llm.budget import BudgetedLLMClient
 from infrastructure.llm.config import LLMConfig
 from infrastructure.llm.http import OpenRouterLLMClient
 from infrastructure.persistence.attempts import SQLiteAttempts
+from infrastructure.persistence.checkpoint import open_checkpointer
+from infrastructure.persistence.connection import connect
 from infrastructure.persistence.conversations import SQLiteConversations
+from infrastructure.persistence.delivery import SQLiteDelivery
+from infrastructure.persistence.quote_cache import SQLiteQuoteCache
 from infrastructure.persistence.turns import SQLiteTurnEvents
+from infrastructure.planos.client import PlanosClient
 from infrastructure.privacy import PrivacyRedactor, install_redacting_logging
+from infrastructure.privacy.ceps import MemoryPrivateCeps
 from infrastructure.quote.cache import CachingQuoteProvider
 from infrastructure.quote.config import QuoteConfig
 from infrastructure.quote.guard import EligibilityGuardProvider
@@ -34,6 +45,8 @@ from infrastructure.quote.hedge import HedgingQuoteProvider
 from infrastructure.quote.http import HttpQuoteProvider
 from infrastructure.quote.retry import RetryingQuoteProvider
 from infrastructure.quote.trace import ApplicationTrace, WireTrace
+from infrastructure.tracing.correlation import ContextCorrelationProvider
+from infrastructure.tracing.recorder import BufferedAttemptRecorder
 
 
 def build_quote_provider(
@@ -77,11 +90,22 @@ def build_ingestor(
     clock: Clock,
     sleep: Callable[[float], Awaitable[None]],
     window: float = 0.5,
+    capture_cep: Callable[[str], str | None] | None = None,
 ) -> Ingestor:
     privacy = PrivacyRedactor()
     install_redacting_logging(logging.getLogger(), privacy)
     store = SQLiteConversations(connection)
-    return Ingestor(store, store, store, privacy, consume, clock=clock, sleep=sleep, window=window)
+    return Ingestor(
+        store,
+        store,
+        store,
+        privacy,
+        consume,
+        clock=clock,
+        sleep=sleep,
+        window=window,
+        capture_cep=capture_cep,
+    )
 
 
 @contextmanager
@@ -118,3 +142,96 @@ def build_slot_extractor(
         privacy,
         default_budget=config.budget_seconds,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class SalesStack:
+    graph: SalesGraph
+    session: SalesSession
+    ingestor: Ingestor
+
+
+def _turn_correlation() -> Correlation:
+    current = current_turn()
+    if current is None:
+        raise RuntimeError("Cotação fora de um turno de conversa")
+    return current
+
+
+@asynccontextmanager
+async def open_sales_stack(
+    database: Path,
+    *,
+    quote_client: httpx.AsyncClient,
+    extractor: SlotExtractor,
+    converser: Converser,
+    clock: Clock,
+    sleep: Callable[[float], Awaitable[None]],
+    rng: Callable[[], float],
+    turn_config: TurnConfig,
+    quote_config: QuoteConfig | None = None,
+    window: float = 0.5,
+    after_reply: Callable[[str], None] | None = None,
+) -> AsyncIterator[SalesStack]:
+    """Composição única do agente; uma conexão SQLite por papel, no mesmo arquivo."""
+    conversations, outbox, trace, cache, events = (connect(database) for _ in range(5))
+    try:
+        attempts = SQLiteAttempts(trace)
+        planos = PlanosClient(quote_client, clock=clock, ttl=300.0, timeout=2.0)
+        products = (await planos.get()).product_facts
+        quote = build_quote_provider(
+            client=quote_client,
+            cache=SQLiteQuoteCache(cache, clock),
+            rules=planos,
+            clock=clock,
+            sleep=sleep,
+            rng=rng,
+            recorder=BufferedAttemptRecorder(attempts.record),
+            # Tentativas herdam o trace_id do turno: snapshot e timeline leem o mesmo id.
+            correlation=ContextCorrelationProvider(_turn_correlation),
+            config=quote_config,
+        )
+        delivery = SQLiteDelivery(outbox)
+
+        async def handoff(conversation_id: str, trace_id: str, decision: HandoffDecision) -> None:
+            # Decisão e efeitos persistidos juntos, antes de qualquer entrega.
+            await delivery.enqueue_handoff(
+                conversation_id, decision, clock.now(), identifier=trace_id
+            )
+
+        turn_events = SQLiteTurnEvents(events)
+        async with open_checkpointer(database) as checkpointer:
+            graph = SalesGraph(
+                extractor=extractor,
+                converser=converser,
+                quote=quote,
+                rules=planos,
+                products=products,
+                clock=clock,
+                handoff=handoff,
+                traces=attempts,
+                checkpointer=checkpointer,
+                config=turn_config,
+                private_slots=MemoryPrivateCeps(),
+                recorder=turn_events,
+            )
+            session = SalesSession(graph, delivery, clock)
+
+            async def consume(turn: IngestedTurn) -> None:
+                await session.consume(turn)
+                if after_reply is not None:
+                    after_reply(turn.conversation_id)
+
+            async with build_ingestor(
+                conversations,
+                consume,
+                clock=clock,
+                sleep=sleep,
+                window=window,
+                capture_cep=capture_private_cep,
+            ) as ingestor:
+                yield SalesStack(graph, session, ingestor)
+            await turn_events.drain()
+    finally:
+        for connection in (conversations, outbox, trace, cache, events):
+            connection.close()

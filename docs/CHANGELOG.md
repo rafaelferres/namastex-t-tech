@@ -4,6 +4,44 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Added — Tarefa 9, fechada na 9.2, 2026-09-11
+
+- Grafo LangGraph `extract → policy → converse/quote → present → close | handoff`,
+  checkpointer assíncrono no mesmo SQLite, lock por conversa e timeline por etapa
+  (`turn_events`). Outbox de escalação com decisão e três efeitos persistidos antes da
+  entrega. Composição única em `open_sales_stack`, usada pelo teste de snapshot e pela
+  medição fim a fim.
+- Avaliação isolada da extração, sem cotação nem orçamento de turno: **gpt-4.1-mini
+  99,96% idade / 100% ano**; gpt-4.1-nano 89,32% / 97,88% com a mesma latência
+  (mediana 1.465 contra 1.482 ms) — rejeitado com medição.
+- Objeção classificada pelo conversador (`objecao`, seis categorias) com piso lexical.
+  Conversas do dataset com objeção que chegam ao nó: **220/1.295 (17,0%) antes,
+  1.295/1.295 depois**, 0 falso positivo em 13.386 outras mensagens de lead.
+- Snapshot de escalação com as tentativas da conversa: o trace_id do turno chega à
+  cadeia de cotação. Teste com SQLite e cadeia reais, API respondendo 503.
+- Harness fim a fim `scripts/measure_end_to_end.py` e medições em
+  `docs/measurements/task9-e2e-{medicao,antes,depois}.json`.
+
+### Fixed — Tarefa 9.2
+
+- O conversador nunca tinha funcionado contra o provedor: `parallel_tool_calls` com
+  `require_parameters` dava 404 em 100% das chamadas, mascarado como erro de contrato.
+  Removido; o prompt pede uma chamada de `cotar` por turno.
+- A timeline gravava síncrona no event loop e travava o turno até o busy_timeout de 5 s
+  quando o checkpointer escrevia. Extração com p50 de 6,1 s voltou a 1,7 s; política
+  com p95 de 5,1 s voltou a 4 ms.
+
+### Changed — Tarefa 9.2
+
+- Orçamento recalibrado com medição (D-034): turno 6 → 10 s; extração 2,5 → 3,5 s;
+  fala 3,0 → 4,5 s; LLM 2,0/2,5 → 4,5 s por chamada; tokens 4.000 → 16.000.
+- Conclusão fim a fim, 150 conversas, mesmo código: **0/150 antes, 38/150 (25,3%)
+  depois**; 38 das 42 elegíveis sem mídia (90,5%). Interrupções depois: mídia 63,
+  recusa por regra 44, LLM 4, cotação indisponível 1, prazo 0. Turno depois: p50
+  1,68 s, p95 4,42 s, p99 5,54 s, nenhum acima de 8 s.
+- Validação: **589 passed, 12 deselected in 5.75s** no loop rápido; **601 passed in
+  29.05s** na suíte completa com o corpus local; ruff e mypy limpos em 71 arquivos.
+
 ### Fixed — Tarefa 9.1, 2026-09-11
 
 - Filtro direcional no conversador: a fala do lead chega inteira, só com PII

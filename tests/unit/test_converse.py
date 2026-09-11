@@ -10,6 +10,7 @@ from agent.nodes.converse import ConversationInput, Converser, contains_money, p
 from agent.templates import format_brl, render_safe_reply
 from application.llm import LLMContractError, LLMResponse, LLMToolCall
 from domain.handoff import HandoffReason
+from domain.objection import Objecao
 from domain.quote import Declined, Quote, QuoteUnavailable
 from infrastructure.planos.projections import project_planos
 from tests.fakes import CANONICAL_OBJECTIONS
@@ -20,14 +21,14 @@ def products(plans_payload):
     return project_planos(plans_payload).product_facts
 
 
-def client(content='{"texto":"Posso ajudar.","escalacao":null}', calls=()):
+def client(content='{"texto":"Posso ajudar.","escalacao":null,"objecao":"nenhuma"}', calls=()):
     return AsyncMock(
         complete=AsyncMock(return_value=LLMResponse(content, "m", 1, 2, None, 0, calls))
     )
 
 
-def speech(text, escalacao=None):
-    return client(json.dumps({"texto": text, "escalacao": escalacao}))
+def speech(text, escalacao=None, objecao="nenhuma"):
+    return client(json.dumps({"texto": text, "escalacao": escalacao, "objecao": objecao}))
 
 
 async def converse(leaf, products, historico=(), resultado=None):
@@ -97,7 +98,21 @@ async def test_suggestion_is_enum_and_invalid_schema_is_contract_error(products)
     result = await converse(speech("Entendi.", "pedido_de_humano"), products)
     assert result.escalacao is HandoffReason.HUMANO
     with pytest.raises(LLMContractError):
-        await converse(client('{"texto":"Olá","escalacao":"vou chamar alguém"}'), products)
+        await converse(
+            client('{"texto":"Olá","escalacao":"vou chamar alguém","objecao":"nenhuma"}'), products
+        )
+
+
+@pytest.mark.asyncio
+async def test_objection_is_required_structured_enum_alongside_speech(products):
+    leaf = speech("Entendo.", objecao="franquia_alta")
+    assert (await converse(leaf, products)).objecao is Objecao.FRANQUIA_ALTA
+    assert "objecao" in leaf.complete.call_args.args[0].schema["required"]
+    assert (await converse(speech("Certo."), products)).objecao is None
+    with pytest.raises(LLMContractError):
+        await converse(speech("Certo.", objecao="achei caro"), products)
+    with pytest.raises(LLMContractError):
+        await converse(client('{"texto":"Certo.","escalacao":null}'), products)
 
 
 @pytest.mark.asyncio

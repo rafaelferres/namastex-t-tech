@@ -507,3 +507,82 @@ baixo") deixam de ser bloqueadas, pois a invariante é valor, não vocabulário 
 supera os casos equivalentes de e83ba25. Falso positivo cai no template, lado
 seguro. Contagens um a nove por extenso não são detectadas perto de termo de valor;
 preço real nessa faixa não existe no catálogo.
+
+## D-031 — Objeção classificada pelo modelo, com piso lexical
+**Data:** 2026-09-11
+**Contexto:** o grafo roteava objeção por `price_objection` ("caro") antes do
+conversador. Das 1.295 conversas do dataset com objeção, 220 (17,0%) chegavam ao nó;
+"a franquia ta alta" e "o preco ta salgado", as mais frequentes, nunca chegavam.
+**Alternativas:** ampliar só o léxico; chamada LLM dedicada à classificação; campo
+estruturado na saída que o conversador já produz, com o léxico como piso.
+**Decisão:** `objecao` obrigatório no schema strict do conversador — uma das seis
+categorias ou `nenhuma`. O roteamento acontece depois do conversador: tool `cotar`,
+depois objeção, depois fim. Se o modelo devolve `nenhuma`, `objecao_lexical` reconhece
+as frases conhecidas; a frase principal vence o sufixo "… me ofereceu menos". O nó
+mantém um texto fixo por categoria. A timeline grava a etapa `objecao` com a fonte
+(`modelo` ou `lexico`) e a categoria, para medir divergência.
+**Consequência:** o piso sozinho roteia 1.295/1.295, com 0 falso positivo em 13.386
+outras mensagens de lead. Ele foi escrito sobre as mesmas 36 frases do gerador, então
+100% é por construção; paráfrases novas dependem do modelo. O contador de objeções de
+preço da ingestão (D-018) continua lexical e separado. Num turno em que ainda falta
+dado, o pedido do dado vem antes da objeção.
+
+## D-032 — trace_id do turno propagado à cadeia; snapshot da conversa inteira
+**Data:** 2026-09-11
+**Contexto:** não havia composição de produção. O grafo lia tentativas pelo trace_id
+do turno, mas a cadeia criava correlação própria por cotação; fora dos testes o
+snapshot da escalação saía sem tentativas.
+**Alternativas:** a cadeia devolver o trace_id; parâmetro extra em `QuoteProvider`;
+escopo do turno numa ContextVar lida pela fábrica de correlação.
+**Decisão:** `turn_correlation(trace_id, conversation_id)` na aplicação; o grafo abre o
+escopo ao cotar. `open_sales_stack` monta o `ContextCorrelationProvider` com fábrica que
+lê o turno corrente e falha se não houver. O snapshot lê `quote_attempts` da conversa
+inteira (`read_conversation`), não só do turno que escalou.
+**Consequência:** `QuoteProvider` não muda. Cotação fora de turno falha explicitamente
+na composição de produção. Teste com SQLite e cadeia reais: escalação por cotação
+esgotada leva ao snapshot exatamente as linhas da tabela, com o trace_id do handoff.
+
+## D-033 — Timeline fora do event loop; tool sem parallel_tool_calls
+**Data:** 2026-09-11
+**Contexto:** o primeiro piloto real mostrou extração com p50 de 6.085 ms (1.482 ms na
+avaliação isolada) e `policy`/fala com p95 perto de 5.060 ms. `SQLiteTurnEvents` gravava
+de forma síncrona no event loop; com o checkpointer segurando transação entre awaits,
+o loop travava até o busy_timeout de 5 s e o evento se perdia. O mesmo piloto mostrou
+que o conversador nunca tinha funcionado contra o provedor: OpenRouter respondia 404
+"No endpoints found" em todas as chamadas. Uma matriz de seis variantes isolou a causa:
+`parallel_tool_calls: false` com `require_parameters: true` não tem endpoint.
+**Alternativas:** para a timeline, fila limitada como a das tentativas ou escrita em
+thread encadeada; para a tool, remover `require_parameters` ou `parallel_tool_calls`.
+**Decisão:** timeline grava em thread, encadeada para preservar a ordem, com `drain()`
+antes de ler e ao fechar a pilha. Sai `parallel_tool_calls`; fica `require_parameters`,
+que garante o schema strict. Mais de uma chamada continua erro de contrato, e o prompt
+pede uma chamada por turno: sem essa regra o modelo chamava `cotar` três vezes para
+"quanto fica o seguro?", abertura de 658 conversas do dataset.
+**Consequência:** o 404 era convertido em LLMContractError sem registro do corpo; o
+defeito só apareceu com chamada real. Nenhum teste offline teria pego os dois casos.
+
+## D-034 — Orçamento do turno recalibrado com medição fim a fim
+**Data:** 2026-09-11
+**Contexto:** a tarefa 8 fixou turno de 6 s, LLM com timeout de 2 s e teto de 2,5 s
+por chamada, e 4.000 tokens por conversa, por analogia e antes de existir medição de
+LLM. Com D-033 corrigido, 150 conversas do dataset (amostra aleatória, seed 2026)
+rodaram duas vezes pelo agente real: extrator gpt-4.1-mini e conversador gpt-4.1 via
+OpenRouter, cadeia real contra a API local com QUOTE_SEED=42, 20% de falha e 10% de
+lentidão. O lead do dataset nunca informa data de vigência; o harness a responde
+quando o agente pede e, se a conversa acaba sem cotação, pede o Completo.
+**Alternativas:** manter 6 s e trocar o extrator pelo nano; ampliar só o turno total;
+dimensionar cada etapa pelo p99 medido sem corte (piloto de 30 conversas).
+**Decisão:** turno de 10 s; extração até 3,5 s (p99 sem corte 3,07 s; isolado
+3,26 s); fala até 4,5 s (p99 4,38 s); cotação até 3,5 s; LLM com timeout e teto de
+4,5 s; 16.000 tokens por conversa (máximo medido 9.510). O nano fica rejeitado:
+mediana 1.465 ms contra 1.482 ms do mini e 10 pontos a menos em idade — a latência é
+a ida ao provedor, não a inferência.
+**Consequência:** mesmo código, só a configuração muda. Antes: 0/150 cotadas — 27
+escalações por tokens (o conversador estourava 4.000 já na primeira fala) e 19 por
+LLM cortado em 2–2,5 s; o prazo aparecia como corte de chamada, não como prazo do
+turno. Depois: 38/150 cotadas (25,3%), 38 das 42 elegíveis sem mídia (90,5%). Mídia
+sem resolução (63) domina as interrupções e pertence a outra fase. Turno depois:
+p50 1,68 s, p95 4,42 s, p99 5,54 s, máximo 6,78 s, nenhum acima de 8 s. Custos
+conhecidos US$ 0,25 e US$ 0,50. As rodadas compartilham a instância da API: o sorteio
+é independente por chamada, mas as sequências de falha diferem. Amostra de 150 dá
+margem de cerca de ±7 pontos percentuais na taxa de conclusão.

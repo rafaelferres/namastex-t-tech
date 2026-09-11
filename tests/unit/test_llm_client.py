@@ -49,9 +49,10 @@ def test_structured_request_uses_role_model_and_preserves_usage_decimal() -> Non
 
         async def run() -> None:
             async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as transport:
-                result = await OpenRouterLLMClient(
-                    transport, LLMConfig(api_key="secret"), timeline
-                ).complete(request())
+                config = LLMConfig(api_key="secret", timeout_seconds=2.0, budget_seconds=2.5)
+                result = await OpenRouterLLMClient(transport, config, timeline).complete(
+                    request()
+                )
             assert result.content == "{}"
             assert result.prompt_tokens == 17
             assert result.completion_tokens == 4
@@ -158,7 +159,9 @@ def test_overall_deadline_cancels_transport_without_real_sleep(budget: float) ->
             async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as transport:
                 with pytest.raises(LLMUnavailable):
                     await OpenRouterLLMClient(
-                        transport, LLMConfig(api_key="secret"), timeline
+                        transport,
+                        LLMConfig(api_key="secret", timeout_seconds=2.0, budget_seconds=2.5),
+                        timeline,
                     ).complete(request(budget=budget))
 
         timeline.run(run())

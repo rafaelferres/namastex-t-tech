@@ -34,7 +34,8 @@ def test_native_tool_request_and_response(arguments):
         def handle(req):
             body = json.loads(req.content)
             assert body["tools"][0]["function"]["parameters"] == TOOL.parameters
-            assert body["parallel_tool_calls"] is False
+            # Com require_parameters, nenhum endpoint do OpenRouter aceita esse campo (404).
+            assert "parallel_tool_calls" not in body
             return httpx.Response(
                 200,
                 json={

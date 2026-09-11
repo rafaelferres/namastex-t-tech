@@ -3,11 +3,11 @@
 Documento técnico do sistema. Para as decisões e seus fundamentos, ver o
 `README.md`. Para as regras que governam alterações de código, ver `AGENTS.md`.
 
-Estado da Tarefa 8: núcleo determinístico, ingestão e SQLite implementados.
-Cliente OpenRouter, extrator estruturado e harness com gravação/reprodução estão
-implementados e avaliados em 2.500 conversas reais do corpus. Capturas redigidas
-permitem replay offline; limiares medidos protegem contra regressão. Grafo, conversador, resolução de mídia, entrega da outbox,
-webhook e console permanecem desenho das próximas fases.
+Estado da Tarefa 9: núcleo determinístico, ingestão, SQLite, cliente OpenRouter e
+extrator avaliado em isolamento. Grafo LangGraph com checkpointer assíncrono,
+conversador com a tool `cotar`, roteamento de objeção, outbox de escalação e a
+composição única `open_sales_stack` estão implementados e medidos fim a fim contra a
+API local. Resolução de mídia, webhook de WhatsApp e console permanecem desenho.
 
 ---
 
@@ -148,11 +148,12 @@ cache exige mexer no relógio da máquina.
 ### 4.1. Cliente de linguagem
 
 `application.llm.LLMClient` é a porta assíncrona. `LLMConfig` configura modelos
-separados por papel, timeout de 2 s, orçamento de 2,5 s e limite de 4.000 tokens
-por conversa. A medição real registrou mediana de 1,58 s e p95 de 2,35 s;
-11,52% das conversas foram interrompidas por indisponibilidade/prazo.
-Esses limites ainda precisam de calibração antes de produção.
-`OpenRouterLLMClient` envia JSON Schema estrito e exige suporte do provedor.
+separados por papel, timeout HTTP e teto por chamada de 4,5 s e limite de 16.000
+tokens por conversa (D-034; a tarefa 8 usava 2 s, 2,5 s e 4.000). O teto efetivo de
+cada etapa vem de `TurnConfig`, que passa ao cliente o menor entre o teto da etapa e
+o que resta do turno. `OpenRouterLLMClient` envia JSON Schema estrito e exige suporte
+do provedor (`require_parameters`); não envia `parallel_tool_calls`, que nenhum
+endpoint aceita junto com essa exigência (D-033).
 Erros não transportam corpo HTTP nem credenciais. `BudgetedLLMClient` compartilha
 contagem entre papéis e limita também a espera pelo lock; estouro de tokens gera
 sinal determinístico consumido pela regra `OrcamentoTokensEsgotado`.
@@ -177,10 +178,11 @@ chave. A chave da fixture inclui conversa, posição, modelo, schema, contexto e
 configuração. Reprodução é padrão e nunca recorre à rede se faltar captura.
 O harness processa rajadas em ordem, sem gabarito no contexto, e para ao obter
 idade e ano informados. A auditoria privada de CEP é separada da acurácia LLM.
-Avaliação completa é `slow` e `eval`, com 7.298 capturas reais. Idade: 88,48%;
-ano: 93,88%; pisos de regressão: 88% e 93%. Esses pisos não são SLOs de produção.
-Das 2.500 conversas, 288 foram interrompidas; nas 2.212 concluídas, ambos os slots
-estão corretos. Falhas também têm latência capturada; cancelamento externo não
+A avaliação da tarefa 8 (7.298 capturas, idade 88,48%, ano 93,88%) rodou sob o
+orçamento de tempo: das 2.500 conversas, 288 foram interrompidas e, nas 2.212
+concluídas, ambos os slots estavam corretos — media progresso, não extração. A
+avaliação isolada da tarefa 9 (`tests/golden/isolated.py`) roda sem cotação, grafo
+nem orçamento de turno: gpt-4.1-mini acerta 99,96% das idades e 100% dos anos. Falhas também têm latência capturada; cancelamento externo não
 é transformado em indisponibilidade artificial. Custo sem uso retornado é
 desconhecido e estimado separadamente. Nenhuma chave é necessária para replay.
 
@@ -539,7 +541,14 @@ Snapshot copia slots de forma imutável e redige o CEP nessa cópia. Reutiliza o
 registros QuoteAttempt existentes por protocolo estrutural de leitura, sem
 segunda representação das tentativas e sem importar application no domínio.
 A proveniência é preservada; o pedido original continua com seu CEP para cotar.
-Persistência da decisão e integração com estado do grafo ficam para próximas fases.
+O grafo abre `turn_correlation` ao cotar, então as tentativas herdam o trace_id do
+turno; o snapshot lê `quote_attempts` da conversa inteira (D-032).
+
+Objeção é classificada pelo conversador no campo estruturado `objecao` (seis
+categorias ou `nenhuma`); se o modelo não classificar, o piso lexical
+`objecao_lexical` reconhece as frases conhecidas. O roteamento acontece depois da
+fala: tool `cotar`, depois objeção, depois fim. O nó responde com texto fixo por
+categoria e grava a fonte na timeline (D-031).
 
 ### Efeitos da escalação
 
@@ -848,9 +857,10 @@ demonstrável em vez de invisível.
 
 ### Checkpointer do LangGraph
 
-`SqliteSaver`, no mesmo arquivo. Confirme se a variante assíncrona existe na
-versão fixada — se não existir, a ponte precisa ser explícita e única, nunca
-`asyncio.run()` espalhado.
+`AsyncSqliteSaver` sobre aiosqlite, no mesmo arquivo e em conexão dedicada
+(`open_checkpointer`), sem ponte síncrona. Como ele segura transação entre awaits,
+nenhuma outra escrita SQLite pode acontecer no event loop: a timeline grava em
+thread, encadeada (D-033).
 
 ---
 
@@ -858,11 +868,18 @@ versão fixada — se não existir, a ponte precisa ser explícita e única, nun
 
 | Recurso | Limite |
 |---|---|
-| Turno completo | ~6s, com deadline propagation |
-| Chamada individual à `/quote` | 2s |
+| Turno completo | 10 s, com deadline propagation (era 6 s) |
+| Extração | até 3,5 s (p99 medido 3,07 s) |
+| Fala do conversador | até 4,5 s (p99 medido 4,38 s) |
+| Cotação (cadeia) | até 3,5 s |
+| Chamada individual à `/quote` | 2 s |
+| Chamada individual ao LLM | 4,5 s |
 | Disparo do hedge | 100 ms, calibrado no p99 local |
 | Tentativas de cotação | 3, dentro do orçamento restante |
-| Tokens por conversa | limite configurado; excedê-lo escala |
+| Tokens por conversa | 16.000 (máximo medido 9.445); excedê-lo escala |
+
+Valores de `TurnConfig` e `LLMConfig`, medidos sem corte em conversas reais do
+dataset (D-034): o turno inteiro teve p50 de 1,76 s e p99 de 4,97 s.
 
 O orçamento decresce: se a extração consome 3s, restam 3s para a cotação. Esgotado
 o orçamento, a execução para de tentar e transita limpa para a rota de

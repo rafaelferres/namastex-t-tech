@@ -57,7 +57,9 @@ class OpenRouterLLMClient:
                                     }
                                     for tool in request.tools
                                 ],
-                                "parallel_tool_calls": False,
+                                # Sem parallel_tool_calls: com require_parameters nenhum
+                                # endpoint o aceita (404). Mais de uma chamada já é erro
+                                # de contrato no conversador.
                             }
                             if request.tools
                             else {}

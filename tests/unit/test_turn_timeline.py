@@ -35,3 +35,22 @@ async def test_turn_stages_are_durable_ordered_and_idempotent(tmp_path):
         assert "1580 ms" in output
     finally:
         connection.close()
+
+
+@pytest.mark.asyncio
+async def test_record_never_waits_for_sqlite_lock_on_the_event_loop(tmp_path):
+    """Escrita síncrona travava o loop até o busy_timeout enquanto outra conexão escrevia."""
+    path = tmp_path / "trace.sqlite"
+    connection, blocker = connect(path), connect(path)
+    try:
+        message = InboundMessage("replay", "c", "c", "text", "Olá", "m1", 0)
+        await SQLiteConversations(connection).ensure(message, None, datetime(2026, 9, 11))
+        store = SQLiteTurnEvents(connection)
+        blocker.execute("BEGIN IMMEDIATE")  # outra conexão segura o lock de escrita
+        event = TurnEvent("t", "c", "extract", "ativa", 1480, None, datetime(2026, 9, 11))
+        store.record(event)  # precisa voltar já, sem esperar o lock no event loop
+        blocker.commit()
+        assert await store.read_turn("t") == (event,)
+    finally:
+        blocker.close()
+        connection.close()

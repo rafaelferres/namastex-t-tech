@@ -75,7 +75,14 @@ def llm(*replies: str | LLMToolCall) -> AsyncMock:
     responses = [
         LLMResponse("", "m", 1, 2, None, 0, (reply,))
         if isinstance(reply, LLMToolCall)
-        else LLMResponse(json.dumps({"texto": reply, "escalacao": None}), "m", 1, 2, None, 0)
+        else LLMResponse(
+            json.dumps({"texto": reply, "escalacao": None, "objecao": "nenhuma"}),
+            "m",
+            1,
+            2,
+            None,
+            0,
+        )
         for reply in replies
     ]
     return AsyncMock(complete=AsyncMock(side_effect=responses))
@@ -97,7 +104,7 @@ def graph_with(plans_payload, *, leaf, quote, age=30):
         products=project_planos(plans_payload).product_facts,
         clock=FakeClock(),
         handoff=AsyncMock(),
-        traces=AsyncMock(read=AsyncMock(return_value=())),
+        traces=AsyncMock(read_conversation=AsyncMock(return_value=())),
         checkpointer=InMemorySaver(),
         config=TurnConfig(),
     )
@@ -184,6 +191,7 @@ async def test_every_outbound_carries_money_only_after_quoted_attempt(
             leaf = llm(
                 "Olá! O Completo fica R$ 99,90 por mês.",  # modelo tenta cotar sozinho
                 "Carência de 30 dias em roubo e furto.",
+                "Entendo.",  # objeção roteada pelo piso lexical
                 LLMToolCall("cotar", {"plano_id": "completo"}),
                 "Confirmando: você paga duzentos e nove reais.",  # repete valor por conta
             )

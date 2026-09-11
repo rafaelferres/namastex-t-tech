@@ -42,16 +42,20 @@ class SQLiteAttempts:
             )
 
     async def read(self, trace_id: str) -> tuple[QuoteAttempt, ...]:
-        return await run_sqlite(partial(self._read, trace_id))
+        order = "CASE WHEN tentativa=0 THEN 1 ELSE 0 END, tentativa, criado_em, rowid"
+        return await run_sqlite(partial(self._read, "trace_id", trace_id, order))
 
-    def _read(self, trace_id: str) -> tuple[QuoteAttempt, ...]:
+    async def read_conversation(self, conversation_id: str) -> tuple[QuoteAttempt, ...]:
+        """Todas as tentativas da conversa, na ordem de gravação; alimenta o snapshot."""
+        return await run_sqlite(partial(self._read, "conversation_id", conversation_id, "rowid"))
+
+    def _read(self, column: str, value: str, order: str) -> tuple[QuoteAttempt, ...]:
         with self._lock:
             rows = self._connection.execute(
                 "SELECT trace_id, conversation_id, fingerprint, tentativa, status, origem, "
                 "http_status, latencia_ms, hedge, ano_normalizado, erro, criado_em "
-                "FROM quote_attempts WHERE trace_id=? "
-                "ORDER BY CASE WHEN tentativa=0 THEN 1 ELSE 0 END, tentativa, criado_em, rowid",
-                (trace_id,),
+                f"FROM quote_attempts WHERE {column}=? ORDER BY {order}",
+                (value,),
             ).fetchall()
         return tuple(
             QuoteAttempt(
