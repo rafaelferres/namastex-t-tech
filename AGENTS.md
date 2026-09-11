@@ -9,7 +9,11 @@ Agente de vendas de seguro auto para a seguradora fictícia **AutoSeguro**. Aten
 leads por WhatsApp: conversa, qualifica, cota usando uma API legada instável, e
 decide sozinho quando resolver e quando passar para um humano.
 
-Stack: Python 3.12, LangGraph, Postgres, Redis, httpx.
+Stack: Python 3.12, LangGraph, SQLite, httpx.
+
+Processo único, sem serviço de dados externo. Lock, debounce e dedup usam
+primitivas em memória e índice único — não há Redis. Se você sentir falta de um,
+a topologia mudou e isso precisa ser discutido antes.
 
 ## Invariantes
 
@@ -66,7 +70,22 @@ Idade fora de 18–75 e veículo com mais de 20 anos somam **30% dos leads**. O
 agente recusa com o motivo e encerra. Escalar 30% do tráfego para humano é falhar
 no critério de avaliação, não cumpri-lo.
 
-### 6. PII é redigida na entrada
+### 6. Dinheiro nunca é `REAL`
+
+SQLite não tem tipo decimal. Valor monetário é persistido como `TEXT` com o
+`Decimal` serializado. `REAL` introduz erro de ponto flutuante silencioso num
+sistema cuja invariante principal é a integridade do preço.
+
+### 7. Ano-modelo futuro é normalizado no payload, não só no guard
+
+Modelo do ano seguinte é rotineiro no Brasil e produz idade negativa, que a API
+recusa com `422`. A requisição sai com `veiculo_ano = min(veiculo_ano, ano_atual)`.
+
+Normaliza apenas **um** ano à frente, nunca no sentido inverso, e grava
+`quote_attempts.ano_normalizado`. Dois ou mais anos no futuro é erro de digitação:
+o agente confirma com o lead em vez de ajustar em silêncio.
+
+### 8. PII é redigida na entrada
 
 Antes de qualquer coisa tocar log, contexto de LLM ou banco.
 
@@ -84,12 +103,11 @@ src/
   domain/          entidades e regras puras. ZERO import de framework
   application/     casos de uso e portas (Protocol)
   agent/           LangGraph: grafo, nós, prompts, templates
-  infrastructure/  adapters: httpx, sqlalchemy, redis
+  infrastructure/  adapters: httpx, sqlite3
   interfaces/      webhook FastAPI, CLI, replay do dataset, console Streamlit
 ```
 
-`domain/` e `application/` não importam `langgraph`, `httpx`, `redis` nem
-`sqlalchemy`. O grafo é detalhe de orquestração, não o núcleo.
+`domain/` e `application/` não importam `langgraph`, `httpx` nem `sqlite3`. O grafo é detalhe de orquestração, não o núcleo.
 
 ### Cadeia de cotação
 
@@ -229,7 +247,7 @@ determinística justamente por isso. Saber onde a linha passa é parte do trabal
 | Política de handoff | regra é classe pura, entra contexto, sai decisão |
 | Templates de apresentação | payload entra, texto sai |
 | Redação de PII | texto entra, texto redigido sai |
-| Repositórios | contrato verificável contra Postgres de teste |
+| Repositórios | contrato verificável contra SQLite em memória |
 | Roteamento do grafo | com nós de LLM substituídos por duplos |
 
 Para isso funcionar, três coisas **precisam** ser injetadas por construtor:
@@ -260,7 +278,7 @@ custa dinheiro de API; teste é binário, offline e roda em segundos.
 
 ```
 muitos   unitários de domínio e decorators   ms, sem I/O
-alguns   integração (Postgres, Redis, /quote com seed fixo)
+alguns   integração (SQLite em memória, /quote com seed fixo)
 poucos   end-to-end via replay do dataset
 à parte  avaliação de LLM, rodada sob demanda
 ```
@@ -276,7 +294,7 @@ entendeu o bug ainda.
 ## Comandos
 
 ```bash
-# API de cotação (do repo do desafio)
+# API de cotação (do repo do desafio) — a aplicação não tem serviço de dados
 docker compose up --build            # http://localhost:8000
 
 # desenvolvimento
@@ -305,7 +323,7 @@ uv run python -m interfaces.replay --conversation conv_00013
 
 ```bash
 QUOTE_SEED=42 docker compose up              # falhas reprodutíveis
-QUOTE_FAILURE_RATE=1.0 docker compose up     # força a escada até o N4
+QUOTE_FAILURE_RATE=1.0 docker compose up     # força a escada até o N3
 ```
 
 Nunca escreva teste que dependa da sorte do sorteio de falha.
@@ -323,6 +341,61 @@ Nunca escreva teste que dependa da sorte do sorteio de falha.
 - Não escreva interface para algo com uma implementação só e sem intenção de ter
   outra. SOLID aqui é a cadeia de decorators e a lista de regras de handoff, não
   ceremônia
+
+## Registro de decisões e mudanças
+
+Dois arquivos vivos em `docs/`. Eles têm gatilhos específicos — não escreva neles
+a cada prompt.
+
+### `docs/DECISIONS.md`
+
+Registro de decisões tomadas **durante a implementação**. Append-only: nunca edite
+nem apague uma entrada; se uma decisão for revertida, escreva uma nova entrada
+superando a anterior.
+
+**Escreva uma entrada quando** a escolha tinha alternativa defensável e alguém
+poderia razoavelmente perguntar "por que assim?". Exemplos que qualificam: a
+ordem de dois decorators, o formato de uma chave de cache, tratar um erro como
+transitório ou permanente, o limiar de uma avaliação.
+
+**Não escreva quando** a escolha é convenção óbvia, renomeação, formatação, ou já
+está decidida em `README.md` ou `ARQUITETURA.md`.
+
+**Fronteira com os outros documentos:**
+
+| Onde | O quê |
+|---|---|
+| `README.md` | as decisões que a entrega precisa defender, em prosa |
+| `docs/ARQUITETURA.md` | como o sistema é, no estado atual |
+| `docs/DECISIONS.md` | por que ficou assim, em ordem cronológica |
+
+Se uma decisão de implementação contradizer o `ARQUITETURA.md`, atualize os dois:
+a entrada em `DECISIONS.md` e o estado em `ARQUITETURA.md`.
+
+Formato:
+
+```markdown
+## D-007 — Cache de recusa com o mesmo TTL da cotação
+**Data:** 2026-09-12
+**Contexto:** recusas são tão determinísticas quanto cotações, mas expiram por
+outro motivo — a regra de aceitação pode mudar em `/planos`.
+**Alternativas:** TTL curto para recusa; não cachear recusa.
+**Decisão:** mesmo TTL, porque `/planos` é cacheado separadamente e sua
+invalidação já cobre o caso.
+**Consequência:** mudança de regra exige invalidar os dois caches juntos.
+```
+
+### `docs/CHANGELOG.md`
+
+Formato Keep a Changelog. Uma entrada **por fase concluída ou por sessão de
+trabalho**, não por prompt e não por commit — o histórico do git já cobre commits.
+
+Cada entrada diz o que passou a funcionar, não o que foi digitado. "Cadeia de
+cotação resolve N0 a N2 com falha residual medida em 1,2%" é entrada útil;
+"adicionado retry.py" não é.
+
+Quando uma fase fecha, registre também o número que o portão de saída produziu.
+Esses números alimentam a tabela de resultados do `README.md`.
 
 ## Rastreabilidade
 
@@ -349,5 +422,6 @@ Uma linha por chamada física.
 - [ ] Ordenação de mensagem usa `message_index`
 - [ ] Nenhuma PII em log, em mensagem de exceção ou na tela do console
 - [ ] O console Streamlit não ganhou lógica que os casos de uso não tenham
+- [ ] Decisão não óbvia virou entrada em `docs/DECISIONS.md`
+- [ ] `docs/ARQUITETURA.md` continua descrevendo o sistema como ele é
 - [ ] `uv run pytest` e `uv run ruff check` passam
-- [ ] Decisão nova e não óbvia está no README, com o porquê
