@@ -4,6 +4,38 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Added — Tarefa 4, 2026-09-11
+
+- Cadeia Guard → Cache → Retry → Hedge → Http composta em um único wiring,
+  com dependências injetadas e orçamento de cotação configurável de 3,5 s.
+- Perfis inelegíveis são recusados localmente sem HTTP nem cache. Falha no
+  carregamento de regras deixa a API decidir; request e CEP são preservados.
+- Cotações e recusas sobrevivem a restart no cache SQLite, expiram à meia-noite
+  original e carregam origem explícita. Erro de cache degrada desempenho sem
+  esconder o resultado; logs não incluem payload, CEP ou traceback.
+- Startup aplica schema idempotente contendo somente quote_cache. Dinheiro é
+  TEXT no JSON, preservando precisão e zeros finais; WAL, busy_timeout e
+  foreign_keys são configurados. Em memória o SQLite usa journal_mode=memory.
+- Operações SQLite ficam fora do event loop. Cancelamento aguarda o worker antes
+  de propagar, evitando fechar uma conexão ainda em uso.
+
+### Validation — Tarefa 4
+
+- **260 testes passaram em 6,96 s**, sem rede, Docker ou sleep real. Ruff limpo
+  e mypy sem erros em 22 arquivos de código. Inclui 35 casos adicionais líquidos,
+  com testes escritos e observados falhando antes dos componentes novos.
+- Em 10.000 execuções por cenário: sem corte por tempo, **2,72% sem hedge** e
+  **1,18% com hedge**; orçamento de produção de 3,5 s, **3,29% sem hedge** e
+  **2,43% com hedge**. Sementes fixas e tempo virtual, cerca de 4 s de processamento
+  nos quatro testes estatísticos. README registra contagens e metodologia.
+- O aumento de 1,25 ponto percentual com hedge justifica rever timeout/janela
+  após medir latência dos sucessos reais; defaults de 2 s e três tentativas
+  mantidos, sem otimizar artificialmente o duplo de sucesso imediato.
+- Regressão de fechamento da conexão durante escrita cancelada reproduzida e
+  corrigida; revisão independente da implementação e da correção concluída.
+- Trace, outras tabelas, grafo, prompts, adapters e console continuam fora.
+  Deadline de turno completo ainda precisa incluir catálogo/cache, além do retry.
+
 ### Added — Tarefa 3, 2026-09-11
 
 - Retry com backoff exponencial, full jitter, teto de tentativas e orçamento

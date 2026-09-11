@@ -112,3 +112,66 @@ de sucesso imediato. Janela de hedge 1,5 s, três tentativas e orçamento de 20 
 isolam a taxa residual do corte por deadline. Orçamento real menor e latências
 de sucesso não desprezíveis podem produzir taxas diferentes. A medição exercita
 os decorators reais; o tempo gasto nas 20.000 execuções é processamento, não sleep.
+
+## D-008 — Budget de produção e baseline com deadline vinculante
+**Data:** 2026-09-11
+**Contexto:** os 20 s da Tarefa 3 nunca cortam tentativas; não representam a fatia
+de cotação de um turno de aproximadamente 6 s.
+**Alternativas:** manter números sem deadline como estimativa de produção;
+reduzir timeout ou aumentar tentativas para perseguir 1,2%; medir com 3,5 s.
+**Decisão:** padrão configurável `PRODUCTION_QUOTE_BUDGET = 3.5`, consumido pelo
+wiring via QuoteConfig e pelos testes estatísticos. Com 10.000 execuções por
+cenário, seeds 42/2026 e timeout 2 s, medimos: sem corte, 2,72% sem hedge e 1,18%
+com hedge; com 3,5 s, 3,29% sem hedge e 2,43% com hedge. A baseline de produção
+é empírica, com tolerância de 0,5 ponto percentual, não a fórmula independente
+de três tentativas completas. Sem corte usa 20 s; máximo possível é 10,8 s.
+**Consequência:** aumento com hedge de 1,25 ponto percentual é relevante e justifica
+revisitar timeout/janela com distribuição de latência dos sucessos reais. Mantemos
+2 s e três tentativas: mais tentativas não devolvem o tempo já consumido, e reduzir
+timeout num duplo de sucesso imediato favoreceria artificialmente a medição.
+Guard/cache não entram no budget do retry; deadline do turno inteiro ainda exige
+propagação pela aplicação, incluindo catálogo e contenção SQLite.
+
+## D-009 — Conexão dedicada e cancelamento seguro no cache SQLite
+**Data:** 2026-09-11
+**Contexto:** busy_timeout pode bloquear por 5 s. SQLite síncrono dentro de async
+bloquearia o loop, inclusive timers de retry e hedge de outras conversas.
+**Alternativas:** sqlite3 no loop; dependência aiosqlite; worker threads da stdlib
+com conexão dedicada e serialização por lock.
+**Decisão:** worker threads com lock por instância, uma instância por conexão;
+startup síncrono configura conexão e schema. Operações aguardam o worker protegido
+por shield mesmo se o consumidor cancelar, então propagam CancelledError. O dono
+aguarda seus consumidores e fecha a conexão; uma escrita já iniciada pode concluir.
+**Consequência:** não bloqueia o event loop, mas cancelamento pode aguardar o
+busy_timeout e a fila de operações no lock; 5 s não é teto global de encerramento.
+O teste com authorizer SQLite e eventos reproduziu fechamento durante
+escrita após cancelamento; a implementação agora drena o worker antes de retornar.
+Em memória, WAL não existe; o teste verifica memory nesse modo e wal em arquivo.
+
+## D-010 — Origem imutável e validade até a meia-noite original
+**Data:** 2026-09-11
+**Contexto:** cache deve distinguir resultado histórico de nova chamada física,
+e uma resposta pode atravessar a meia-noite durante o retry.
+**Alternativas:** wrapper de resultado; estado mutável no provider; metadados no
+resultado. Para expiração, calcular na entrada ou renovar na escrita.
+**Decisão:** origem em Quote/Declined, keyword-only, fora da igualdade, padrão api.
+Guard e cache devolvem cópias; ano_normalizado histórico permanece no hit e não
+representa nova normalização física. Chave e vencimento usam a mesma leitura de
+Clock.now; após a meia-noite original não escreve, nem serve hit atrasado. SQLite
+salva instantes UTC e Decimal como strings no JSON, sem request nem CEP.
+**Consequência:** o futuro trace deve combinar origem e normalização. O calendário
+local precisa acompanhar a API; datas ingênuas usam o fuso local do processo.
+
+## D-011 — Falha aberta também para catálogo malformado no guard
+**Data:** 2026-09-11
+**Contexto:** PlanosClient.current distingue indisponibilidade de erro de contrato
+(D-004). Um guard estrito diante do segundo erro impediria uma cotação que a API
+ainda poderia responder corretamente.
+**Alternativas:** propagar erros de contrato do catálogo; falhar aberto em todo
+erro de carregamento, mantendo observabilidade sem conteúdo externo.
+**Decisão:** o guard captura Exception somente ao carregar regras, registra
+rules_unavailable em nível ERROR sem mensagem externa/traceback e chama o interno.
+None também deixa passar. CancelledError não é capturado. Consumidores diretos
+do catálogo continuam vendo erro de contrato; erros da cotação não são engolidos.
+**Consequência:** guard permanece otimização. Logs identificam falha da dependência
+sem PII; diagnóstico detalhado seguro fica para a instrumentação futura.
