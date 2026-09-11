@@ -56,3 +56,59 @@ reuso. Erros não são cacheados, não há retry ou fallback para dados expirado
 permitindo o guard falhar aberto conforme previsto.
 **Consequência:** catálogo vencido exige um novo GET; consultas concorrentes durante
 uma expiração podem fazer leituras duplicadas. Não há coordenação de fetch nesta fase.
+
+## D-005 — Full jitter e deadline absoluto do retry
+**Data:** 2026-09-11
+**Contexto:** teto de tentativas não limita espera total; verificar o tempo só entre
+chamadas permite ultrapassar o orçamento enquanto uma chamada está em andamento.
+**Alternativas:** limitar apenas sleeps; usar timer de sistema não injetado;
+disputar a execução com um deadline através do sleep injetado.
+**Decisão:** full jitter uniforme entre zero e o teto exponencial limitado por
+`max_delay`, com RNG callable injetado. Deadline calculado na entrada por
+Clock.monotonic, inclusive antes de qualquer trabalho síncrono da folha. Um timer
+injetado cancela e aguarda a operação em andamento ao vencer o orçamento. Delay
+igual ou maior que o tempo restante não é iniciado. Resultado já concluído tem
+preferência se resultado e timer estiverem prontos no mesmo despertar.
+**Consequência:** não depende de temporização real nos testes; requer que a folha
+coopere com cancelamento. `tentativas` conta invocações lógicas do provider interno,
+incluindo uma chamada cancelada por deadline, não chamadas físicas hedgeadas.
+
+## D-006 — Promoção conservadora de suspeita de contrato
+**Data:** 2026-09-11
+**Contexto:** uma falha sem corpo esperado pode vir de proxy; promovê-la isoladamente
+ocultaria indisponibilidade real. O hedge pode terminar com uma falha suspeita depois
+de já observar uma não suspeita, e perder essa evidência altera indevidamente o destino.
+**Alternativas:** promover na primeira suspeita; nunca promover; usar limiar de
+falhas esgotadas preservando evidência de todas as chamadas.
+**Decisão:** limiar padrão de três tentativas lógicas, configurável a partir de dois.
+Só promove no esgotamento, quando todas as tentativas terminaram em falha suspeita.
+Sucesso ou Declined encerra imediatamente, mesmo após atingir o limiar de suspeitas.
+O hedge propaga a mesma última QuoteUnavailable, preserva `suspeita_contrato`
+física e anota `todas_falhas_suspeitas` como conjunção das evidências. Retry usa
+esse resumo, não apenas a marca da última chamada física.
+**Consequência:** não promove um conjunto misto de falhas, nem uma chamada pendente
+cancelada pelo budget. Três falhas independentes a 20% têm probabilidade de 0,8%,
+mas isso não é probabilidade posterior de bug: proxies podem falhar correlacionados.
+O limiar é heurístico e precisa de observação em produção, não prova de contrato.
+
+## D-007 — Conclusões concorrentes e medição com tempo virtual
+**Data:** 2026-09-11
+**Contexto:** FIRST_COMPLETED devolve um conjunto sem ordem. Escolher um elemento
+arbitrário pode ocultar erro de contrato ou propagar a falha física errada.
+**Alternativas:** escolher arbitrariamente; observar ordem e dar prioridade a erros
+de contrato; esperar sempre ambas, prejudicando a latência.
+**Decisão:** o hedge registra a ordem de conclusão por chamada. Quote e Declined
+são respostas válidas; erros de contrato/programação prontos no mesmo despertar
+têm precedência. A primeira resposta válida vence e os demais tasks/timer são
+cancelados e aguardados, inclusive em cancelamento externo. Falha rápida não gera hedge.
+**Consequência:** testa empates e cancelamento sem espera real. O suporte de teste
+usa event loop virtual compatível com CPython 3.12 e acessa suas filas internas;
+uma migração de Python/event loop requer revisar esse suporte.
+
+Para o portão estatístico são 10.000 execuções por configuração, seed 42 para
+a folha e 2026 para jitter, tolerância de 0,5 ponto percentual. A folha sorteia
+20% de falha imediata, 10% de latência de 8 s truncada pelo timeout de 2 s e 70%
+de sucesso imediato. Janela de hedge 1,5 s, três tentativas e orçamento de 20 s
+isolam a taxa residual do corte por deadline. Orçamento real menor e latências
+de sucesso não desprezíveis podem produzir taxas diferentes. A medição exercita
+os decorators reais; o tempo gasto nas 20.000 execuções é processamento, não sleep.

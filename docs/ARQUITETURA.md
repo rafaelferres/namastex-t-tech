@@ -3,8 +3,8 @@
 Documento técnico do sistema. Para as decisões e seus fundamentos, ver o
 `README.md`. Para as regras que governam alterações de código, ver `AGENTS.md`.
 
-Estado após a Tarefa 2: domínio, portas, folha HTTP de cotação e cliente de
-planos com TTL em memória estão implementados. Resiliência, trace, persistência,
+Estado após a Tarefa 3: domínio, portas, cliente HTTP, catálogo com TTL,
+retry e hedge estão implementados. Guard, cache de cotação, trace, persistência,
 grafo e adapters de entrada ainda são desenho das próximas fases.
 
 ---
@@ -191,6 +191,37 @@ residual triplica. Ele é viável porque `/quote` é função pura, sem efeito
 colateral — a chamada duplicada não causa dano.
 
 O hedge trata apenas latência. Falha rápida é responsabilidade do `Retry`.
+
+### Implementação de retry e hedge
+
+`RetryingQuoteProvider` recebe provider interno, limites de tentativas/delays,
+orçamento, sleep, RNG callable e Clock. Captura somente QuoteUnavailable;
+QuoteContractError atravessa intacto, e Quote/Declined encerram a operação.
+O backoff usa full jitter, com teto exponencial saturado. O deadline absoluto
+inclui chamadas em andamento, canceladas e aguardadas quando o orçamento vence.
+Não dorme se o próximo delay consumir todo o tempo restante (D-005).
+
+Ao esgotar, a exceção informa `tentativas` lógicas. Se todas falharam, todas as
+chamadas físicas foram suspeitas e houve pelo menos três tentativas (limiar
+configurável), retorna erro de contrato em vez de indisponibilidade. A promoção
+não acontece antes de esgotar o budget ou as tentativas (D-006).
+
+`HedgingQuoteProvider` inicia a segunda chamada apenas se a primeira ainda estiver
+pendente ao fim da janela injetada. Uma recusa é resposta válida. Após disparar,
+espera a primeira resposta válida; erro de contrato tem prioridade entre conclusões
+já disponíveis. Se ambas forem indisponíveis, propaga a última por ordem real
+de conclusão, com o resumo `todas_falhas_suspeitas` preservando evidência de ambas.
+Não altera a marca física `suspeita_contrato`. Perdedor e timer são sempre
+cancelados e aguardados, também em cancelamento externo (D-007).
+
+Composição: `RetryingQuoteProvider(HedgingQuoteProvider(HttpQuoteProvider(...)))`.
+Cada tentativa lógica do retry pode produzir até duas chamadas físicas.
+
+Portão medido com 10.000 execuções por configuração: **2,72% sem hedge** e
+**1,18% com hedge**, respectivamente 13.822 e 14.036 chamadas físicas. O teste usa
+seed 42, tempo virtual, sucesso imediato e budget de 20 s para permitir as três
+tentativas completas. Não representa a disponibilidade do turno inteiro com
+budget de 6 s; esse corte precisa de medição própria na integração.
 
 ### Cache exato
 
