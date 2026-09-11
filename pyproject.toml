@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Agente de vendas de seguro auto — AutoSeguro"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-dependencies = ["httpx>=0.28,<0.29"]
+dependencies = [
+    "httpx>=0.28,<0.29",
+    "pyarrow>=18,<24",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -29,7 +32,7 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "--strict-markers"
+addopts = "--strict-markers --import-mode=importlib"
 markers = ["slow: simulações estatísticas; excluir do loop de TDD com -m 'not slow'"]
 
 [tool.ruff]

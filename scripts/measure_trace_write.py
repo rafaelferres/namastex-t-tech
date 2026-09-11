@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import math
 import statistics
@@ -12,13 +13,24 @@ from tempfile import TemporaryDirectory
 from time import perf_counter_ns
 
 from application.tracing import QuoteAttempt
+from domain.messages import InboundMessage
 from infrastructure.persistence.attempts import SQLiteAttempts
 from infrastructure.persistence.connection import connect
+from infrastructure.persistence.conversations import SQLiteConversations
 
 
 def measure(parent: Path, samples: int) -> dict[str, object]:
     with TemporaryDirectory(dir=parent) as folder:
         connection = connect(Path(folder) / "trace.sqlite")
+        asyncio.run(
+            SQLiteConversations(connection).ensure(
+                InboundMessage(
+                    "cli", "conv-benchmark", "synthetic-benchmark", "text", "", "seed", 0
+                ),
+                None,
+                datetime.now(UTC),
+            )
+        )
         store = SQLiteAttempts(connection)
         event = QuoteAttempt(
             "trace-benchmark",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import httpx
 
+from application.ingest import IngestedTurn, Ingestor
 from application.inspect_trace import InspectQuoteTrace
 from application.ports import (
     AcceptanceRulesProvider,
@@ -17,6 +19,8 @@ from application.ports import (
 )
 from application.tracing import CorrelationProvider
 from infrastructure.persistence.attempts import SQLiteAttempts
+from infrastructure.persistence.conversations import SQLiteConversations
+from infrastructure.privacy import PrivacyRedactor, install_redacting_logging
 from infrastructure.quote.cache import CachingQuoteProvider
 from infrastructure.quote.config import QuoteConfig
 from infrastructure.quote.guard import EligibilityGuardProvider
@@ -58,6 +62,20 @@ def build_quote_provider(
     cached = CachingQuoteProvider(retry, cache, clock)
     guard = EligibilityGuardProvider(cached, rules, clock)
     return ApplicationTrace(guard, recorder, correlation, clock)
+
+
+def build_ingestor(
+    connection: sqlite3.Connection,
+    consume: Callable[[IngestedTurn], Awaitable[None]],
+    *,
+    clock: Clock,
+    sleep: Callable[[float], Awaitable[None]],
+    window: float = 0.5,
+) -> Ingestor:
+    privacy = PrivacyRedactor()
+    install_redacting_logging(logging.getLogger(), privacy)
+    store = SQLiteConversations(connection)
+    return Ingestor(store, store, store, privacy, consume, clock=clock, sleep=sleep, window=window)
 
 
 @contextmanager

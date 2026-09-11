@@ -12,9 +12,11 @@ import pytest
 from application.inspect_trace import InspectQuoteTrace
 from application.tracing import Correlation
 from domain.acceptance import AcceptanceRules
+from domain.messages import InboundMessage
 from domain.quote import QuoteRequest
 from infrastructure.persistence.attempts import SQLiteAttempts
 from infrastructure.persistence.connection import connect
+from infrastructure.persistence.conversations import SQLiteConversations
 from infrastructure.persistence.quote_cache import SQLiteQuoteCache
 from infrastructure.tracing.correlation import ContextCorrelationProvider
 from infrastructure.tracing.recorder import BufferedAttemptRecorder
@@ -48,6 +50,11 @@ async def test_logical_origins_and_shared_correlation(
     sequence = count(1)
     ctx = ContextCorrelationProvider(lambda: Correlation(f"trace-{next(sequence)}", "conv-1"))
     try:
+        await SQLiteConversations(trace_conn).ensure(
+            InboundMessage("test", "conv-1", "synthetic", "text", "", "seed", 0),
+            None,
+            datetime(2026, 9, 11),
+        )
         recorder = SQLiteAttempts(trace_conn)
         buffer = BufferedAttemptRecorder(recorder.record)
         async with httpx.AsyncClient(

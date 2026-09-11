@@ -27,6 +27,11 @@ def test_connection_and_idempotent_schema(tmp_path: Path, memory: bool) -> None:
         assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         assert conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall() == [
+            ("leads",),
+            ("conversations",),
+            ("messages",),
+            ("handoffs",),
+            ("outbound_messages",),
             ("quote_cache",),
             ("quote_attempts",),
         ]

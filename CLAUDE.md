@@ -57,7 +57,7 @@ este projeto é avaliado.
 Loop rápido enquanto desenvolve:
 
 ```bash
-uv run pytest tests/unit -q
+uv run pytest -m "not slow"
 ```
 
 Se esse comando levar mais que alguns segundos, algum teste ganhou I/O, `sleep`

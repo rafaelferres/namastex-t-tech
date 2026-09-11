@@ -7,8 +7,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from application.tracing import QuoteAttempt
+from domain.messages import InboundMessage
 from infrastructure.persistence.attempts import SQLiteAttempts
 from infrastructure.persistence.connection import connect
+from infrastructure.persistence.conversations import SQLiteConversations
 from interfaces.trace import main
 
 
@@ -16,6 +18,13 @@ def test_inspection_command_reads_cached_resolution(tmp_path: Path, capsys) -> N
     path = tmp_path / "trace.sqlite"
     conn = connect(path)
     try:
+        asyncio.run(
+            SQLiteConversations(conn).ensure(
+                InboundMessage("test", "conv-test", "synthetic", "text", "", "seed", 0),
+                None,
+                datetime(2026, 9, 11),
+            )
+        )
         asyncio.run(
             SQLiteAttempts(conn).record(
                 QuoteAttempt(

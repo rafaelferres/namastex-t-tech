@@ -4,6 +4,32 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Added — Tarefa 7, 2026-09-11
+
+- Envelopes de entrada e intenções de saída tipadas; ingestão com redação de PII,
+  dedup persistido, janela de silêncio de 500 ms e consumo serial por conversa.
+  Três turnos com objeção lexical de preço disparam escalação sem depender de LLM.
+- Sete tabelas SQLite, identidade de canal pseudonimizada, hash opcional de CPF,
+  repositórios por portas pequenas e migração transacional da FK de tentativas.
+  Intenções de outbox e snapshots são persistidos sem executar efeitos; campos
+  textuais são redigidos e Decimal é preservado em texto.
+- Replay local ordenado por message_index, mídia não resolvida e saída redigida.
+  Harness intercambiável carrega **2.500 conversas / 751 inelegíveis**; amostra
+  estratificada redigida de 48 casos. Extrator falso retorna ausência: **0%** nos
+  dois slots, sem consultar gabarito. Auditoria dos 2.500 CPFs: **FP=0 / FN=0**.
+
+### Changed — Tarefa 7
+
+- Cancelamento do chamador aguarda persistência + enfileiramento; cancelamento da
+  barreira drena consumidores. Falha preserva turno para tentativa explícita sem
+  duplicar objeções. Snapshots não relíveis são rejeitados antes de gravar.
+- Pytest usa importlib: **381 passed, 10 deselected in 7.79s** no loop rápido.
+  Suíte completa, incluindo estatísticos/corpus: **391 passed in 14.46s**.
+  Coleta caiu de 4,34 s para 3,61 s; perfil aponta stat em /mnt/c como custo dominante.
+  Ruff limpo em src/tests/scripts; mypy estrito limpo em 45 arquivos de src.
+- AGENTS corrige identidade de canal e os comandos de TDD excluem slow.
+  Decisões D-018 a D-023 e arquitetura documentam limites de memória/entrega.
+
 ### Added — Tarefa 6, 2026-09-11
 
 - Apresentação pura de prêmio, franquia, coberturas, carência e pro-rata com

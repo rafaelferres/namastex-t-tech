@@ -12,9 +12,11 @@ import httpx
 
 from application.ports import SystemClock
 from application.tracing import Correlation
+from domain.messages import InboundMessage
 from domain.quote import QuoteRequest
 from infrastructure.persistence.attempts import SQLiteAttempts
 from infrastructure.persistence.connection import connect
+from infrastructure.persistence.conversations import SQLiteConversations
 from infrastructure.persistence.quote_cache import SQLiteQuoteCache
 from infrastructure.planos.client import PlanosClient
 from infrastructure.tracing.correlation import ContextCorrelationProvider
@@ -30,6 +32,11 @@ async def demo(url: str, database: Path) -> None:
     store = SQLiteAttempts(trace_conn)
     recorder = BufferedAttemptRecorder(store.record)
     try:
+        await SQLiteConversations(trace_conn).ensure(
+            InboundMessage("cli", conversation, "synthetic-demo", "text", "", "seed", 0),
+            None,
+            clock.now(),
+        )
         async with httpx.AsyncClient(base_url=url, trust_env=False) as client:
             provider = build_quote_provider(
                 client=client,
