@@ -22,6 +22,7 @@ class HandoffReason(StrEnum):
     HUMANO = "pedido_de_humano"
     LACO = "laco_no_slot"
     ESCOPO = "fora_de_escopo"
+    TOKENS = "limite_de_tokens"
 
 
 class QuoteAttemptView(Protocol):
@@ -60,6 +61,7 @@ class ConversationContext:
     pede_desconto: bool = False
     objecoes_preco: int = 0
     pede_humano: bool = False
+    tokens_esgotados: bool = False
     slot_em_esclarecimento: SlotName | None = None
     tentativas_sem_avanco: int = 0
     assunto: Literal[
@@ -164,6 +166,13 @@ class DescontoForaTabela:
         )
 
 
+class OrcamentoTokensEsgotado:
+    motivo = HandoffReason.TOKENS
+
+    def evaluate(self, ctx: ConversationContext) -> HandoffDecision | None:
+        return _decision(ctx, self.motivo) if ctx.tokens_esgotados else None
+
+
 class PedidoHumano:
     motivo = HandoffReason.HUMANO
 
@@ -208,6 +217,7 @@ class HandoffPolicy:
                 DocumentoRecebido(),
                 MidiaNaoResolvida(),
                 CotacaoEsgotada(),
+                OrcamentoTokensEsgotado(),
                 DescontoForaTabela(),
                 PedidoHumano(),
                 LacoEsclarecimento(),

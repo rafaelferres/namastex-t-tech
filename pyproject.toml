@@ -7,6 +7,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "httpx>=0.28,<0.29",
     "pyarrow>=18,<24",
+    "pydantic>=2.10,<3",
 ]
 
 [build-system]
@@ -33,7 +34,7 @@ testpaths = ["tests"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--strict-markers --import-mode=importlib"
-markers = ["slow: simulações estatísticas; excluir do loop de TDD com -m 'not slow'"]
+markers = ["slow: corpus completo e simulações; excluir do loop de TDD", "eval: avaliação LLM gravada ou reproduzida; também slow"]
 
 [tool.ruff]
 target-version = "py312"

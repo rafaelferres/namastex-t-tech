@@ -8,8 +8,10 @@ from pathlib import Path
 
 import httpx
 
+from agent.nodes.extract import SlotExtractor
 from application.ingest import IngestedTurn, Ingestor
 from application.inspect_trace import InspectQuoteTrace
+from application.llm import LLMClient
 from application.ports import (
     AcceptanceRulesProvider,
     AttemptRecorder,
@@ -18,6 +20,9 @@ from application.ports import (
     QuoteProvider,
 )
 from application.tracing import CorrelationProvider
+from infrastructure.llm.budget import BudgetedLLMClient
+from infrastructure.llm.config import LLMConfig
+from infrastructure.llm.http import OpenRouterLLMClient
 from infrastructure.persistence.attempts import SQLiteAttempts
 from infrastructure.persistence.conversations import SQLiteConversations
 from infrastructure.privacy import PrivacyRedactor, install_redacting_logging
@@ -87,3 +92,18 @@ def trace_inspector(path: Path) -> Iterator[InspectQuoteTrace]:
         yield InspectQuoteTrace(SQLiteAttempts(connection))
     finally:
         connection.close()
+
+
+def build_llm_client(*, client: httpx.AsyncClient, config: LLMConfig, clock: Clock) -> LLMClient:
+    return BudgetedLLMClient(
+        OpenRouterLLMClient(client, config, clock), config.conversation_token_limit
+    )
+
+
+def build_slot_extractor(
+    *, client: httpx.AsyncClient, config: LLMConfig, clock: Clock, privacy: PrivacyRedactor,
+) -> SlotExtractor:
+    return SlotExtractor(
+        build_llm_client(client=client, config=config, clock=clock), privacy,
+        default_budget=config.budget_seconds,
+    )

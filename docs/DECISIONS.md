@@ -390,3 +390,45 @@ slow permanecem separados (oito estatísticos, corpus e auditoria CPF).
 **Consequência:** ganho local modesto, sem retirar cobertura ou desabilitar
 assertions. O tempo continua dominado pelo workspace montado; não prometemos
 que a mudança transforma este ambiente em um loop de dois segundos.
+
+
+## D-024 — Workspace Linux e avaliação real como portão pendente
+**Data:** 2026-09-11
+**Contexto:** pequenas operações em /mnt/c dominavam a coleta do pytest.
+**Alternativas:** otimizar testes; manter montagem; migrar workspace.
+**Decisão:** cópia ativa em /home/rafael/namastex-test-tecnico, preservando a
+original como backup. Os mesmos 381 testes passaram em 1,61 s, contra 7,79 s.
+Cliente e extrator usam duplos no loop rápido; o portão eval exige capturas reais.
+**Consequência:** credencial OpenRouter ausente impede obter acurácia, custo e
+limiares. Nenhuma resposta sintética será publicada como avaliação medida.
+
+## D-025 — CEP privado e slots incertos fora da inferência monetária
+**Data:** 2026-09-11
+**Contexto:** a extração precisa conservar CEP, mas PII não pode entrar no LLM.
+**Alternativas:** enviar CEP redigido e perder o slot; enviar PII ao modelo;
+capturar CEP determinísticamente antes da redação.
+**Decisão:** captura privada de CEP explícito, imutável após coletado; schema
+rejeita inteiro e recupera sete dígitos. Prompt recebe só mensagem redigida e
+slots públicos. Incerto é estado explícito, separado de ausência. Ano futuro não
+é corrigido. Em falha, exceção de extração preserva slots para o consumidor.
+**Consequência:** captura precisa ser conectada à fronteira de ingestão no futuro
+grafo; não se tenta reconstruir CEP de texto já redigido. Auditoria de CEP mede
+captura privada, não acurácia do modelo. Prompt de extração permanece provisório.
+
+## D-026 — Capturas por chamada e limite de tokens compartilhado
+**Data:** 2026-09-11
+**Contexto:** repetição do golden set não pode gastar tokens nem mudar respostas.
+**Alternativas:** cache só por prompt; capturas por posição e configuração;
+consultar modelo em todo teste.
+**Decisão:** capturas imutáveis por conversa/posição/modelo/schema/contexto/config;
+replay não tem fallback. Uso e custo retornados pelo provedor são preservados,
+custo ausente fica desconhecido. Orçamento cobre lock e chamada; 4.000 tokens por
+conversa é limite inicial compartilhado entre papéis. Exceder dispara regra
+independente de sugestão do LLM. Timeout 2 s e orçamento 2,5 s reservam tempo para
+cotação dentro do turno. Candidato do extrator: openai/gpt-4.1-mini; conversador
+configurado separadamente como openai/gpt-4.1, ainda sem implementação.
+**Consequência:** modelo, latência e limite precisam ser validados na execução
+real. Contadores são locais à instância, não duráveis. Capturas incluem somente
+resposta redigida e metadados, nunca chave ou prompt em claro.
+**Referências:** [Structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs),
+[usage accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting).

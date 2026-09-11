@@ -4,6 +4,31 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Added — Tarefa 8, implementação offline, 2026-09-11
+
+- Cliente OpenRouter com modelos por papel, saída estruturada, timeout/orçamento
+  e sinal determinístico de escalação por limite de tokens da conversa.
+- Extrator isolado com prompt provisório, proveniência, ausência/incerteza,
+  CEP privado preservado mesmo em falha e ano-modelo futuro intacto.
+- Capturas imutáveis e replay sem fallback para rede; harness reporta acurácia,
+  custo conhecido, latência e erros por formato. Avaliação real continua pendente
+  de OPENROUTER_API_KEY: nenhuma fixture ou acurácia foi fabricada.
+- .env.example sem credenciais; .env ignorado. Varredura dos 15 commits locais
+  não encontrou padrões de chave OpenRouter/OpenAI; isso não prova ausência de
+  todo segredo possível.
+
+### Changed — Tarefa 8
+
+- Workspace migrado para /home/rafael/namastex-test-tecnico; original preservado.
+  Mesmos 381 testes: 7,79 s em /mnt/c e 1,61 s no Linux.
+- Validação integrada: **448 passed, 11 deselected in 1.56s** no loop rápido;
+  **458 passed, 1 deselected in 9.26s** incluindo estatística/corpus, excluindo eval.
+  Ruff limpo e mypy estrito limpo em 57 arquivos. Auditoria privada recuperou
+  2.500/2.500 CEPs como string, sem perda de zero inicial.
+- Portão eval executado: falha explícita por ausência de capturas reais. Ainda
+  faltam medição de qualidade/custo/latência, limiares e replay real verde para
+  considerar a tarefa concluída.
+
 ### Added — Tarefa 7, 2026-09-11
 
 - Envelopes de entrada e intenções de saída tipadas; ingestão com redação de PII,

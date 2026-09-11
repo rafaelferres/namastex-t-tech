@@ -479,8 +479,8 @@ QUOTE_FAILURE_RATE=1.0 docker compose up   # força a escada até o N3
 
 | Métrica | Baseline humana | Agente |
 |---|---|---|
-| Extração de idade (2.500 casos) | — | `<preencher>` |
-| Extração de ano do veículo | — | `<preencher>` |
+| Extração de idade (2.500 casos) | — | Pendente: credencial OpenRouter |
+| Extração de ano do veículo | — | Pendente: credencial OpenRouter |
 | Recusas corretas (751 casos) | 0 / 751 | `<preencher>` |
 | Cotações consistentes com a tabela | 0 / 2.500 | `<preencher>` |
 | Menção de carência quando aplicável | 0 / 2.500 | `<preencher>` |
@@ -674,3 +674,44 @@ Validação da tarefa 7: **381 testes rápidos passaram em 7,79 s**, dez casos s
 excluídos, Ruff e mypy estrito limpos. O perfil local apontou acesso a arquivos
 como custo dominante: stat consumiu 4,56 s na coleta instrumentada em /mnt/c.
 O modo importlib reduziu a coleta de 4,34 s para 3,61 s sem remover testes.
+
+
+### Extração estruturada e cliente LLM (tarefa 8)
+
+Workspace ativo: `/home/rafael/namastex-test-tecnico`. A cópia em `/mnt/c` foi
+preservada. A mesma suíte de 381 testes caiu de 7,79 s para 1,61 s após migração.
+
+Cliente OpenRouter por papel, schema Pydantic, limite de tokens e extrator com
+prompt provisório estão disponíveis. Candidato inicial: `openai/gpt-4.1-mini`,
+por permitir testar extração estruturada com um modelo menor que o conversador;
+a escolha ainda depende da avaliação real. Timeout 2 s, orçamento 2,5 s e
+4.000 tokens por conversa são configuráveis. Nenhuma chamada real foi feita:
+`OPENROUTER_API_KEY` ainda não está configurada. Não há acurácia, custo ou
+latência LLM medidos, nem limiar inventado.
+
+A auditoria determinística privada sobre o corpus recuperou **2.500/2.500 CEPs**,
+com zero inteiros, ausências ou zeros iniciais perdidos. Isso não é acurácia LLM:
+o CEP fica fora do contexto enviado ao modelo.
+
+Configure as variáveis de `.env.example` no ambiente; nunca versione a chave.
+O corpus bruto continua externo, indicado por `AUTOSEGURO_DATASET`.
+
+```bash
+uv run pytest -m "not slow"
+# Gravação explícita: exige chave local e consome tokens.
+LLM_EVAL_MODE=record uv run python -m scripts.evaluate_extraction
+# Reprodução: não usa chave nem rede; exige capturas reais anteriores.
+LLM_EVAL_MODE=replay uv run python -m scripts.evaluate_extraction
+uv run pytest -m eval
+```
+
+As capturas ficam em `tests/fixtures/llm-evaluation/`. Após a medição real,
+`thresholds.json` deve registrar `source: measured_real_recording`,
+`idade_accuracy` e `veiculo_ano_accuracy`, com limiares justificados pela medição.
+Sem capturas ou limiares, o portão eval falha claramente. O relatório distingue
+custo conhecido de custo incompleto e agrupa erros por formato de veículo.
+O modo padrão é replay; os testes rápidos usam somente duplos.
+
+Validação offline integrada: **448 testes rápidos em 1,56 s**; **458 testes em
+9,26 s** incluindo corpus e estatística, excluindo eval. Ruff e mypy passaram.
+O portão `-m eval` foi executado e falhou por ausência das capturas reais.
