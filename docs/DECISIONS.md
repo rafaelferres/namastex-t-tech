@@ -586,3 +586,70 @@ p50 1,68 s, p95 4,42 s, p99 5,54 s, máximo 6,78 s, nenhum acima de 8 s. Custos
 conhecidos US$ 0,25 e US$ 0,50. As rodadas compartilham a instância da API: o sorteio
 é independente por chamada, mas as sequências de falha diferem. Amostra de 150 dá
 margem de cerca de ±7 pontos percentuais na taxa de conclusão.
+
+## D-035 — Disciplina de erro em todo cliente externo e verificação de partida
+**Data:** 2026-09-11
+**Contexto:** o conversador recebeu 404 do OpenRouter em todas as chamadas e o cliente
+converteu em "erro de contrato" descartando o corpo (D-033). A auditoria dos demais
+clientes achou irmãos do mesmo defeito: `HttpQuoteProvider` classificava por status mas
+descartava o corpo e punha 401/404 na mesma classe que o 400 de payload; `PlanosClient`
+transformava qualquer erro HTTP, inclusive 401/404, em indisponibilidade, e o guard
+falhava aberto em silêncio; os sinks de escalação convertiam tudo em
+`HandoffDeliveryError()` sem status nem corpo, e a outbox retentaria para sempre gravando
+só o nome da classe.
+**Alternativas:** classificação por cliente, sem vocabulário comum; categoria única
+"falha externa"; taxonomia comum com erro de configuração separado.
+**Decisão:** `ConfigurationError` (aplicação) para credencial, rota, modelo ou parâmetro
+rejeitado (400, 401, 402, 403, 404, 405, 413, 422 e 3xx), com subclasses por cliente;
+transitório é 408, 425, 429 e 5xx; o resto é contrato. `infrastructure/http_errors`
+descreve toda falha como `HTTP <status>: <corpo>`, com PII redigida e 500 caracteres, e
+esse detalhe vai para o log e para o trace (`quote_attempts.erro`, `turn_events`, erro
+da outbox). A cotação mantém sua taxonomia (400 contrato, 422 recusa) e ganha
+`QuoteConfigurationError` como subclasse de contrato, sem retry. O guard não engole
+erro de configuração. `verify_dependencies` roda na abertura da pilha com uma chamada
+mínima à API de cotação, ao extrator, ao conversador (com as mesmas tools e schema de
+produção) e ao modelo de mídia; configuração errada impede a partida, falha passageira
+só é registrada. Supera D-013 no ponto "não registrar mensagem externa".
+**Consequência:** o 404 de D-033 teria parado a partida no primeiro segundo. O corpo
+só chega redigido e truncado; o traceback continua sem ele. Erro de configuração no
+meio de um turno derruba o turno em vez de virar fala de reserva; na mídia, que é não
+bloqueante por especificação, vira log em ERROR e o turno segue.
+
+## D-036 — CEP durável em conversations.slots, purgado no encerramento
+**Data:** 2026-09-11
+**Contexto:** o CEP privado vivia em memória; após reinício o grafo recusava cotar.
+Fail-safe correto, mas não desenho.
+**Alternativas:** manter em memória; hash (impede cotar); cifrar com chave gerenciada;
+persistir como slot operacional com política de retenção.
+**Decisão:** slot é dado operacional, mensagem é log. O CEP vai para
+`conversations.slots` (JSON), primeiro valor imutável, e as mensagens seguem redigidas.
+Os demais slots de qualificação continuam no checkpointer, sem segunda cópia. Retenção:
+encerrar a conversa (`SalesSession.close`) purga `conversations.slots` para `{}`, marca
+`encerrada` e apaga o estado do grafo (`adelete_thread`). A recusa final encerra
+automaticamente, como a invariante 5 já pedia. Estreita a invariante 8 do AGENTS.md
+para esse caso, por decisão do responsável pela tarefa.
+**Consequência:** a cotação sobrevive a reinício com o CEP. O CEP fica em claro no
+SQLite enquanto a conversa está aberta; cifragem em repouso fica como evolução.
+Encerramento por inatividade depende de um agendador que ainda não existe.
+
+## D-037 — Mídia: imagem nunca escala, áudio pede texto, documento escala
+**Data:** 2026-09-11
+**Contexto:** na medição da tarefa 9, 63 de 105 conversas elegíveis escalaram por mídia
+antes de cotar; parte disso contrariava a seção 10 da arquitetura (imagem não alimenta
+slot). Numa chamada real, o conversador pediu "o documento do veículo".
+**Alternativas:** escalar toda mídia; resolver tudo por LLM; resolver só imagem e áudio,
+sem nunca enviar documento.
+**Decisão:** `MediaResolver` na ingestão, não bloqueante. Imagem é classificada
+(`e_veiculo`, `confianca`) e nunca escala: veículo com confiança alta é reconhecido,
+qualquer outro caso vira nota neutra e o agente segue pedindo o dado por texto, sem
+acusar. Áudio transcrito vira texto com proveniência `transcrito`, que exige confirmação;
+áudio sem transcrição pede texto e só escala no segundo (limiar configurável). Documento
+sempre escala e não tem adaptador. O prompt pede só os cinco campos, por texto. Modelo
+`google/gemini-2.5-flash`: único aceito com imagem e áudio sob schema strict e
+`require_parameters` na sondagem (`gemini-2.0-flash-001` voltou 404 e
+`gpt-4o-audio-preview`, 400).
+**Consequência:** o dataset só tem marcadores de mídia, sem arquivo; no replay a
+resolução nunca acontece e imagem e áudio seguem os ramos sem resolução. Os ramos
+resolvidos são exercitados de verdade só pelas quatro fixtures em `tests/fixtures/media`.
+Na fixture real, a transcrição trocou "Ônix" por "anix" — é por isso que slot transcrito
+exige confirmação.

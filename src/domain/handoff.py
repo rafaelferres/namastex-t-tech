@@ -58,6 +58,7 @@ class ConversationContext:
     tentativas: tuple[QuoteAttemptView, ...] = ()
     tipo_midia: Literal["documento", "audio", "imagem"] | None = None
     midia_resolvida: bool = True
+    audios_nao_resolvidos: int = 0  # acumulado na conversa
     # Somente o resultado final da cadeia, nunca uma falha intermediária do wire.
     resultado_cotacao: QuoteOutcome | QuoteUnavailable | QuoteContractError | None = None
     pede_desconto: bool = False
@@ -131,14 +132,20 @@ class DocumentoRecebido:
         return _decision(ctx, self.motivo) if ctx.tipo_midia == "documento" else None
 
 
+@dataclass(frozen=True, slots=True)
 class MidiaNaoResolvida:
-    motivo = HandoffReason.MIDIA
+    """Só áudio sem texto repetido escala; imagem nunca escala (ARQUITETURA §10)."""
+
+    limite: int = 2
+    motivo: ClassVar[HandoffReason] = HandoffReason.MIDIA
+
+    def __post_init__(self) -> None:
+        if type(self.limite) is not int or self.limite < 1:
+            raise ValueError("Limiar de áudios deve ser inteiro positivo")
 
     def evaluate(self, ctx: ConversationContext) -> HandoffDecision | None:
         return (
-            _decision(ctx, self.motivo)
-            if ctx.tipo_midia in ("audio", "imagem") and not ctx.midia_resolvida
-            else None
+            _decision(ctx, self.motivo) if ctx.audios_nao_resolvidos >= self.limite else None
         )
 
 

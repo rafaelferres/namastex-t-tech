@@ -13,6 +13,8 @@ class LLMConfig:
     api_key: str = field(repr=False)
     extractor_model: str = "openai/gpt-4.1-mini"
     conversation_model: str = "openai/gpt-4.1"
+    # Único aceito com imagem e áudio sob schema strict na sondagem da tarefa 10 (D-037).
+    media_model: str = "google/gemini-2.5-flash"
     # Calibrados com medição real (D-034); a tarefa 8 usava 2,0 s, 2,5 s e 4.000 tokens.
     timeout_seconds: float = 4.5
     budget_seconds: float = 4.5
@@ -23,6 +25,7 @@ class LLMConfig:
             not self.api_key.strip()
             or not self.extractor_model.strip()
             or not self.conversation_model.strip()
+            or not self.media_model.strip()
             or self.extractor_model == self.conversation_model
             or not math.isfinite(self.timeout_seconds)
             or self.timeout_seconds <= 0
@@ -34,6 +37,8 @@ class LLMConfig:
             raise ValueError("Configuração LLM inválida")
 
     def model_for(self, role: LLMRole) -> str:
+        if role == LLMRole.MEDIA:
+            return self.media_model
         return self.extractor_model if role == LLMRole.EXTRACTOR else self.conversation_model
 
     @classmethod
@@ -44,6 +49,7 @@ class LLMConfig:
                 api_key=env.get("OPENROUTER_API_KEY", ""),
                 extractor_model=env.get("LLM_EXTRACTOR_MODEL", "openai/gpt-4.1-mini"),
                 conversation_model=env.get("LLM_CONVERSATION_MODEL", "openai/gpt-4.1"),
+                media_model=env.get("LLM_MEDIA_MODEL", "google/gemini-2.5-flash"),
                 timeout_seconds=float(env.get("LLM_TIMEOUT_SECONDS", "4.5")),
                 budget_seconds=float(env.get("LLM_BUDGET_SECONDS", "4.5")),
                 conversation_token_limit=int(env.get("LLM_CONVERSATION_TOKEN_LIMIT", "16000")),

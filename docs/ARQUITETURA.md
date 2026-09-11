@@ -429,6 +429,16 @@ Mensagens das exceções não reproduzem corpo HTTP ou erro de transporte origin
 sem estado compartilhado no provider (D-003). Nenhum status HTTP entra nos objetos
 de domínio. WireTrace e ApplicationTrace consomem esses metadados.
 
+### Mesma régua para todo cliente externo
+
+LLM, `/planos`, `/quote` e os sinks de escalação classificam explicitamente: erro de
+configuração (400, 401, 402, 403, 404, 405, 413, 422 e 3xx; na cotação, 401/403/404/405
+e 3xx, porque 400 é contrato e 422 é recusa), transitório (408, 425, 429 e 5xx) e
+contrato. Erro de configuração nunca vira indisponibilidade nem fala de reserva, e
+falha alto. O corpo da resposta, redigido e truncado, acompanha toda falha no log e no
+trace. `verify_dependencies` faz uma chamada mínima a cada dependência na abertura da
+pilha e impede a partida com configuração errada (D-035).
+
 ### Circuit breaker
 
 Não há breaker sobre `/quote`. A falha é independente e sem estado; um breaker
@@ -619,16 +629,25 @@ são determinísticas e têm redação explicitamente provisória.
 
 ## 10. Pipeline de mídia
 
-`MediaResolver` atua na ingestão, antes do agente. Um adapter por tipo:
+`MediaResolver` atua na ingestão, antes do agente, e não bloqueia: falha ou timeout
+deixam a mensagem sem resolução e o turno segue. `LLMMediaResolver` usa
+`google/gemini-2.5-flash` com schema strict (D-037).
 
-| Tipo | Resolução | Resultado |
-|---|---|---|
-| Áudio | transcrição | vira texto, proveniência `transcrito` |
-| Imagem | classificação de visão | anotação de contexto, nunca slot |
-| Documento | nenhuma | não resolvido → escala |
+| Tipo | Resolução | Resultado | Escala? |
+|---|---|---|---|
+| Áudio | transcrição | vira texto, proveniência `transcrito` (exige confirmação) | só o 2º sem transcrição |
+| Imagem | classificação de visão | nota na resposta, nunca slot | nunca |
+| Documento | nenhuma — nunca sai do processo | não resolvido | sempre |
 
-Nenhum nó do grafo sabe que transcrição ou visão existem. O gatilho de escalação
-não é "recebeu mídia" — é **mídia não resolvida**.
+Nenhum nó do grafo sabe que transcrição ou visão existem: recebem só a
+`MediaResolution` da mensagem. Imagem de veículo com confiança alta é reconhecida;
+qualquer outro caso vira nota neutra e o agente segue pedindo o dado por texto. Áudio
+sem transcrição pede o dado por escrito e escala no segundo. O prompt pede apenas os
+cinco campos, por texto, e nunca documento, foto ou CPF.
+
+O dataset só traz marcadores (`[imagem] ...`), sem arquivo: no replay só os ramos sem
+resolução são exercitados. Os ramos resolvidos são exercitados de verdade pelas quatro
+fixtures de `tests/fixtures/media` via `scripts/probe_media.py`.
 
 **Áudio** é dado biométrico: transcreve, redige a PII do texto, descarta o
 arquivo. A transcrição entra no orçamento de tempo do turno.
@@ -689,6 +708,17 @@ O wiring envolve handlers existentes do logger raiz; handlers adicionados depois
 ou em loggers sem propagação devem instalar o mesmo formatter.
 
 O console futuro renderiza texto redigido por padrão.
+
+### Slots operacionais e retenção
+
+Slot é dado operacional; mensagem é log. A redação protege o histórico — mensagens,
+logs, contexto de LLM e trace. O CEP, único slot que a redação alcança, é guardado em
+`conversations.slots` para cumprir a função de negócio: vai em toda cotação e sobrevive
+a reinício. Primeiro valor imutável; os demais slots ficam no checkpointer (D-036).
+
+Retenção: encerrar a conversa purga `conversations.slots` e apaga o estado do grafo.
+A recusa final encerra automaticamente. Enquanto a conversa está aberta, o CEP fica em
+claro no SQLite; cifragem em repouso e encerramento por inatividade são evolução.
 
 ---
 

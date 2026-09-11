@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import unicodedata
 from collections.abc import Awaitable, Callable
@@ -11,8 +12,12 @@ from types import TracebackType
 from typing import Protocol, Self
 
 from application.conversation_ports import ConversationReader, ConversationWriter, MessageWriter
+from application.external import ConfigurationError
+from application.media import MediaResolver
 from application.ports import Clock
-from domain.messages import InboundMessage
+from domain.messages import InboundMessage, MediaResolution
+
+logger = logging.getLogger(__name__)
 
 
 class MessagePrivacy(Protocol):
@@ -58,9 +63,13 @@ class Ingestor:
         sleep: Callable[[float], Awaitable[None]],
         window: float = 0.5,
         capture_cep: Callable[[str], str | None] | None = None,
+        media: MediaResolver | None = None,
+        media_timeout: float = 10.0,
     ) -> None:
         if not 0 < window < float("inf"):
             raise ValueError("Janela deve ser finita e positiva")
+        self._media = media
+        self._media_timeout = media_timeout
         self._conversations = conversations
         self._messages = messages
         self._reader = reader
@@ -93,8 +102,16 @@ class Ingestor:
     async def ingest(self, message: InboundMessage) -> bool:
         if self._closed:
             raise RuntimeError("Ingestão encerrada")
-        cpf_hash = self._privacy.cpf_hash(message.corpo)
-        safe = replace(message, corpo=self._privacy.redact(message.corpo), media_ref=None)
+        resolution = await self._resolve(message)
+        corpo = message.corpo
+        if resolution is not None and resolution.transcricao is not None:
+            # Áudio vira texto transcrito e redigido; o arquivo nunca é persistido.
+            corpo = resolution.transcricao
+            resolution = replace(resolution, transcricao=None)
+        cpf_hash = self._privacy.cpf_hash(corpo)
+        safe = replace(
+            message, corpo=self._privacy.redact(corpo), media_ref=None, resolucao=resolution
+        )
         cep = (
             self._capture_cep(message.corpo)
             if self._capture_cep and message.tipo == "text"
@@ -114,6 +131,21 @@ class Ingestor:
         if cancelled:
             raise asyncio.CancelledError()
         return result
+
+    async def _resolve(self, message: InboundMessage) -> MediaResolution | None:
+        # Documento nunca vai a provedor externo: ausência de chamada, não configuração.
+        if self._media is None or message.tipo not in ("audio", "image") or not message.media_ref:
+            return None
+        try:
+            async with asyncio.timeout(self._media_timeout):
+                return await self._media.resolve(message)
+        except ConfigurationError as error:
+            # Não bloqueia o lead, mas é bug de deploy: registrado em ERROR com o corpo.
+            logger.error("media_configuration %s", error.detalhe)
+        except Exception as error:
+            detail = getattr(error, "detalhe", None) or type(error).__name__
+            logger.warning("media_unresolved %s %s", message.tipo, detail)
+        return None
 
     async def _accept(self, safe: InboundMessage, cpf_hash: str | None, cep: str | None) -> bool:
         """Commit e enfileiramento completam juntos antes de cancelar o chamador."""

@@ -11,7 +11,7 @@ from agent.nodes.converse import ConversationResult, Converser
 from agent.nodes.extract import ExtractionResult
 from agent.schemas.slots import Slots
 from agent.templates import render_objection, render_safe_reply
-from application.llm import LLMResponse, LLMToolCall
+from application.llm import LLMConfigurationError, LLMResponse, LLMToolCall, LLMUnavailable
 from domain.acceptance import AcceptanceRules
 from domain.handoff import HandoffReason
 from domain.objection import Objecao
@@ -246,6 +246,33 @@ def test_model_classified_objection_without_keyword_reaches_node(plans_payload, 
     assert result["rota"][-1] == "objection"
     assert (result["objecao"], result["objecao_fonte"]) == ("preco_alto", "modelo")
     assert result["texto"] == render_objection(Objecao.PRECO_ALTO)
+
+
+def test_llm_failure_body_reaches_the_turn_trace(plans_payload, quote_payload):
+    recorder = Mock()
+    failure = LLMUnavailable(detalhe="HTTP 503: sobrecarga do provedor")
+    leaf = AsyncMock(complete=AsyncMock(side_effect=failure))
+    with virtual_time() as clock:
+        graph, *_ = build(
+            clock, plans_payload, quote_payload, converser=Converser(leaf), recorder=recorder
+        )
+        result = clock.run(graph.turn("c", "m1", "Oi"))
+    assert result["status"] == "escalada"
+    event = recorded(recorder)["converse_falha"]
+    assert "HTTP 503: sobrecarga do provedor" in event.erro
+
+
+def test_llm_configuration_error_is_traced_and_fails_the_turn(plans_payload, quote_payload):
+    recorder = Mock()
+    failure = LLMConfigurationError("openrouter", "HTTP 404: No endpoints found")
+    leaf = AsyncMock(complete=AsyncMock(side_effect=failure))
+    with virtual_time() as clock:
+        graph, *_ = build(
+            clock, plans_payload, quote_payload, converser=Converser(leaf), recorder=recorder
+        )
+        with pytest.raises(LLMConfigurationError):
+            clock.run(graph.turn("c", "m1", "Oi"))
+    assert "HTTP 404: No endpoints found" in recorded(recorder)["converse_falha"].erro
 
 
 def test_message_without_objection_does_not_route_to_node(plans_payload, quote_payload):

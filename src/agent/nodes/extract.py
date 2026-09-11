@@ -64,8 +64,8 @@ class ExtractionResult:
 
 
 class ExtractionUnavailable(LLMUnavailable):
-    def __init__(self, slots: Slots) -> None:
-        super().__init__()
+    def __init__(self, slots: Slots, *, detalhe: str | None = None) -> None:
+        super().__init__(detalhe=detalhe)
         self._slots = slots
 
     @property
@@ -74,8 +74,8 @@ class ExtractionUnavailable(LLMUnavailable):
 
 
 class ExtractionContractError(LLMContractError):
-    def __init__(self, slots: Slots) -> None:
-        super().__init__()
+    def __init__(self, slots: Slots, *, detalhe: str | None = None) -> None:
+        super().__init__(detalhe=detalhe)
         self._slots = slots
 
     @property
@@ -138,10 +138,10 @@ class SlotExtractor:
             return ExtractionResult(slots=slots, tokens_esgotados=True)
         except (LLMFixtureMissing, LLMFixtureInvalid):
             raise
-        except LLMUnavailable:
-            raise ExtractionUnavailable(slots) from None
-        except LLMContractError:
-            raise ExtractionContractError(slots) from None
+        except LLMUnavailable as error:
+            raise ExtractionUnavailable(slots, detalhe=error.detalhe) from None
+        except LLMContractError as error:
+            raise ExtractionContractError(slots, detalhe=error.detalhe) from None
         try:
             extracted = Slots.model_validate_json(response.content)
         except ValidationError:

@@ -1,15 +1,32 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import logging
 import math
 from decimal import Decimal
 
 import httpx
 
-from application.llm import LLMContractError, LLMRequest, LLMResponse, LLMToolCall, LLMUnavailable
+from application.llm import (
+    LLMConfigurationError,
+    LLMContractError,
+    LLMRequest,
+    LLMResponse,
+    LLMToolCall,
+    LLMUnavailable,
+)
 from application.ports import Clock
+from infrastructure.http_errors import (
+    describe,
+    describe_transport,
+    is_configuration,
+    is_transient,
+)
 from infrastructure.llm.config import LLMConfig
+
+logger = logging.getLogger(__name__)
 
 
 class OpenRouterLLMClient:
@@ -32,7 +49,7 @@ class OpenRouterLLMClient:
                         "model": self._config.model_for(request.role),
                         "messages": [
                             {"role": "system", "content": request.system},
-                            {"role": "user", "content": request.user},
+                            {"role": "user", "content": _user_content(request)},
                         ],
                         "response_format": {
                             "type": "json_schema",
@@ -68,12 +85,22 @@ class OpenRouterLLMClient:
                     timeout=min(self._config.timeout_seconds, budget),
                     follow_redirects=False,
                 )
-        except (httpx.RequestError, TimeoutError):
-            raise LLMUnavailable() from None
-        if response.status_code in (408, 425, 429) or response.status_code >= 500:
-            raise LLMUnavailable()
-        if response.status_code != 200:
-            raise LLMContractError()
+        except (httpx.RequestError, TimeoutError) as error:
+            detail = describe_transport(error)
+            logger.warning("llm_http_unavailable %s", detail)
+            raise LLMUnavailable(detalhe=detail) from None
+        status = response.status_code
+        if status != 200:
+            # Classificação explícita; o corpo nunca é descartado (D-035).
+            detail = describe(response)
+            if is_transient(status):
+                logger.warning("llm_http_unavailable %s", detail)
+                raise LLMUnavailable(detalhe=detail)
+            if is_configuration(status):
+                logger.error("llm_http_configuration %s", detail)
+                raise LLMConfigurationError("openrouter", detail)
+            logger.error("llm_http_unexpected_status %s", detail)
+            raise LLMContractError(detalhe=detail)
         try:
             body = response.json(parse_float=Decimal)
             usage = body["usage"]
@@ -105,7 +132,9 @@ class OpenRouterLLMClient:
                 if not cost.is_finite() or cost < 0:
                     raise ValueError
         except (ValueError, KeyError, IndexError, TypeError, AttributeError):
-            raise LLMContractError() from None
+            detail = describe(response)
+            logger.error("llm_response_contract %s", detail)
+            raise LLMContractError(detalhe=detail) from None
         return LLMResponse(
             content,
             model,
@@ -115,6 +144,22 @@ class OpenRouterLLMClient:
             (self._clock.monotonic() - start) * 1000,
             calls,
         )
+
+
+def _user_content(request: LLMRequest) -> object:
+    if not request.anexos:
+        return request.user
+    parts: list[dict[str, object]] = [{"type": "text", "text": request.user}]
+    for item in request.anexos:
+        encoded = base64.b64encode(item.dados).decode()
+        if item.tipo == "imagem":
+            url = f"data:{item.formato};base64,{encoded}"
+            parts.append({"type": "image_url", "image_url": {"url": url}})
+        else:
+            parts.append(
+                {"type": "input_audio", "input_audio": {"data": encoded, "format": item.formato}}
+            )
+    return parts
 
 
 def parse_tool_calls(value: object) -> tuple[LLMToolCall, ...]:

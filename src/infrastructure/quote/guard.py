@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 
+from application.external import ConfigurationError
 from application.ports import AcceptanceRulesProvider, Clock, QuoteProvider
 from domain.quote import QuoteOutcome, QuoteRequest
 
@@ -18,6 +19,8 @@ class EligibilityGuardProvider:
     async def quote(self, req: QuoteRequest) -> QuoteOutcome:
         try:
             rules = await self._rules.current()
+        except ConfigurationError:
+            raise  # rota ou credencial errada não é catálogo fora do ar (D-035)
         except Exception:
             logger.error("rules_unavailable")
             rules = None

@@ -130,6 +130,44 @@ class SQLiteConversations:
             )
             return cursor.rowcount == 1
 
+    async def remember(self, conversation_id: str, cep: str) -> None:
+        """Slot é dado operacional: o CEP fica em conversations.slots, primeiro valor imutável.
+
+        Mensagem é log e continua redigida; o slot existe para cotar e sai no encerramento.
+        """
+        await run_sqlite(partial(self._remember, conversation_id, cep))
+
+    def _remember(self, conversation_id: str, cep: str) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE conversations SET slots=json_set(slots, '$.cep', ?) "
+                "WHERE id=? AND json_extract(slots, '$.cep') IS NULL",
+                (cep, conversation_id),
+            )
+
+    async def read(self, conversation_id: str) -> str | None:
+        return await run_sqlite(partial(self._read_cep, conversation_id))
+
+    def _read_cep(self, conversation_id: str) -> str | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT json_extract(slots, '$.cep') FROM conversations WHERE id=?",
+                (conversation_id,),
+            ).fetchone()
+        return str(row[0]) if row and row[0] is not None else None
+
+    async def close(self, conversation_id: str, now: datetime) -> None:
+        """Retenção: encerrar a conversa purga os slots operacionais (D-036)."""
+        await run_sqlite(partial(self._close, conversation_id, now.isoformat()))
+
+    def _close(self, conversation_id: str, now: str) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE conversations SET slots='{}', status='encerrada', atualizada_em=? "
+                "WHERE id=?",
+                (now, conversation_id),
+            )
+
     async def messages(self, conversation_id: str) -> tuple[InboundMessage, ...]:
         return await run_sqlite(partial(self._messages, conversation_id))
 

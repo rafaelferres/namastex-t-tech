@@ -12,7 +12,7 @@ import pytest
 from application.ports import AcceptanceRulesProvider
 from domain.acceptance import AcceptanceRules
 from domain.quote import QuoteContractError, QuoteRequest
-from infrastructure.planos.client import PlanosClient, PlanosUnavailable
+from infrastructure.planos.client import PlanosClient, PlanosConfigurationError, PlanosUnavailable
 from infrastructure.planos.projections import project_planos
 from tests.fakes import FakeClock
 
@@ -203,7 +203,14 @@ async def test_failed_refresh_is_not_retried_or_cached_or_replaced_by_stale_data
         catalog_client = PlanosClient(client, clock=clock, ttl=10, timeout=1)
         await catalog_client.get()
         clock.elapsed = 10
-        error = QuoteContractError if failure in ("json", "projection") else PlanosUnavailable
+        error = (
+            QuoteContractError
+            if failure in ("json", "projection")
+            # Redirecionamento é URL base errada: configuração, nunca fail-open (D-035).
+            else PlanosConfigurationError
+            if failure == "redirect"
+            else PlanosUnavailable
+        )
         with pytest.raises(error) as caught:
             await catalog_client.get()
         assert "01310100" not in "".join(traceback.format_exception(caught.value))

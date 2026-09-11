@@ -1,0 +1,44 @@
+{
+  "resultados": [
+    {
+      "fixture": "veiculo_nitido.jpg",
+      "tipo": "image",
+      "modelo": "google/gemini-2.5-flash",
+      "latencia_ms": 1984,
+      "resolvido": true,
+      "e_veiculo": true,
+      "confianca": "alta",
+      "transcricao": null
+    },
+    {
+      "fixture": "veiculo_ruim.jpg",
+      "tipo": "image",
+      "modelo": "google/gemini-2.5-flash",
+      "latencia_ms": 1895,
+      "resolvido": true,
+      "e_veiculo": true,
+      "confianca": "baixa",
+      "transcricao": null
+    },
+    {
+      "fixture": "nao_veiculo.jpg",
+      "tipo": "image",
+      "modelo": "google/gemini-2.5-flash",
+      "latencia_ms": 1669,
+      "resolvido": true,
+      "e_veiculo": false,
+      "confianca": "alta",
+      "transcricao": null
+    },
+    {
+      "fixture": "audio_curto.wav",
+      "tipo": "audio",
+      "modelo": "google/gemini-2.5-flash",
+      "latencia_ms": 1901,
+      "resolvido": true,
+      "e_veiculo": null,
+      "confianca": null,
+      "transcricao": "Tenho 32 anos e o meu carro é um anix, ano 2020."
+    }
+  ]
+}

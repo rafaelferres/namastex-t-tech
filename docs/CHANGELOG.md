@@ -4,6 +4,39 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Fixed — Tarefa 10, 2026-09-11
+
+- Disciplina de erro em todo cliente externo (D-035). A auditoria achou irmãos do 404
+  do conversador: a cotação descartava o corpo e punha 401/404 junto com o 400 de
+  payload; `/planos` transformava 401/404 em indisponibilidade e o guard falhava aberto
+  em silêncio; os sinks de escalação viravam `HandoffDeliveryError()` sem status nem
+  corpo e seriam retentados para sempre. Agora configuração (400/401/402/403/404/405/
+  413/422 e 3xx) é distinta de transitório (408/425/429/5xx) e de contrato, falha alto,
+  e o corpo redigido e truncado vai para o log e para o trace — `quote_attempts.erro`,
+  `turn_events` (`<nó>_falha`) e o erro da outbox.
+- Verificação de partida: `open_sales_stack` faz uma chamada mínima à API de cotação,
+  ao extrator, ao conversador (mesmas tools e schema de produção) e ao modelo de mídia;
+  credencial inválida ou parâmetro não aceito impedem a partida.
+
+### Added — Tarefa 10
+
+- CEP durável em `conversations.slots`, primeiro valor imutável; a cotação sobrevive a
+  reinício com o CEP. Retenção: encerrar a conversa purga os slots e o estado do grafo;
+  a recusa final encerra na hora (D-036). Invariante 8 do AGENTS.md ganha essa exceção.
+- Pipeline de mídia (D-037) com `google/gemini-2.5-flash`, único aceito com imagem e
+  áudio sob schema strict na sondagem. Imagem nunca escala; áudio sem transcrição pede
+  texto e só escala no segundo; áudio transcrito exige confirmação; documento sempre
+  escala e nunca sai do processo. O prompt pede só os cinco campos, por texto.
+- Fixtures reais de mídia (duas fotos em domínio público, uma derivada escurecida e um
+  áudio sintético pt-BR) e `scripts/probe_media.py`: veículo nítido → alta; veículo
+  ruim → baixa; gato → não veículo; áudio transcrito com "anix" no lugar de "Ônix".
+- Conclusão fim a fim, mesmas 150 conversas: **38/150 (25,3%) na 9.2 → 64/150
+  (42,7%)**; elegíveis sem documento **64/74 (86,5%)**. Interrupções: recusa por regra
+  44, documento 31, LLM 9, cotação indisponível 2, segundo áudio 0, prazo 0. 117 de 649
+  turnos sintéticos; nenhuma fala pediu documento, foto ou CPF; custo US$ 0,71.
+- Validação: **638 passed, 12 deselected in 8.08s** no loop rápido; **650 passed in
+  35.10s** na suíte completa com o corpus; ruff e mypy limpos em 76 arquivos.
+
 ### Added — Tarefa 9, fechada na 9.2, 2026-09-11
 
 - Grafo LangGraph `extract → policy → converse/quote → present → close | handoff`,

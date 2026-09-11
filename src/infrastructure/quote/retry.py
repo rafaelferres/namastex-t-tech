@@ -105,4 +105,5 @@ class RetryingQuoteProvider:
             suspeita_contrato=suspects,
             ano_normalizado=normalized,
             tentativas=progress.attempts,
+            detalhe=progress.last_error.detalhe if progress.last_error else None,
         ) from None

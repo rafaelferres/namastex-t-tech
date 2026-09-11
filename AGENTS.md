@@ -95,6 +95,10 @@ Antes de qualquer coisa tocar log, contexto de LLM ou banco.
 - a chave lógica do lead é **(channel, channel_user_id)** — nunca `sender_name`
 - CPF informado espontaneamente é hash opcional, nunca chave; identidade de canal
   é pseudonimizada na persistência (ver arquitetura, seção 11)
+- exceção deliberada e única: o CEP é **slot operacional** e fica em
+  `conversations.slots` para cotar; mensagens, logs, contexto de LLM e trace
+  continuam redigidos. Encerrar a conversa purga os slots (D-036). Qualquer outro
+  dado pessoal em claro no banco exige nova decisão.
 
 ## Arquitetura
 
