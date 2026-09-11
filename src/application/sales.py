@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
 from typing import Literal, Protocol
 
 from application.ingest import IngestedTurn
@@ -16,6 +17,8 @@ class TurnEngine(Protocol):
 
 class ConversationCloser(Protocol):
     async def close(self, conversation_id: str, now: datetime) -> None: ...
+
+    async def stale(self, before: datetime) -> tuple[str, ...]: ...
 
 
 class OutboundWriter(Protocol):
@@ -36,12 +39,25 @@ class SalesSession:
         clock: Clock,
         *,
         closer: ConversationCloser | None = None,
+        retention: timedelta | None = None,
     ) -> None:
         self._engine, self._writer, self._clock = engine, writer, clock
-        self._closer = closer
+        self._closer, self._retention = closer, retention
         self._responses: dict[str, OutboundMessage] = {}
 
+    async def purge(self) -> None:
+        """Purga oportunista, sem agendador: conversa parada além da retenção encerra (D-038)."""
+        if self._closer is None or self._retention is None:
+            return
+        for conversation_id in await self._closer.stale(self._clock.now() - self._retention):
+            await self.close(conversation_id)
+
     async def consume(self, turn: IngestedTurn) -> None:
+        try:
+            await self.purge()
+        except Exception:
+            # Retenção atrasada não custa a resposta ao lead; o próximo turno tenta de novo.
+            logging.getLogger(__name__).error("retention_purge_failed")
         message = await self._engine.respond(turn)
         # Handoff persistence atomically enqueues its own lead notification.
         if message.intent is not Intent.ESCALAR:

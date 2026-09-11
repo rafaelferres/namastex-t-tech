@@ -148,10 +148,11 @@ cache exige mexer no relógio da máquina.
 ### 4.1. Cliente de linguagem
 
 `application.llm.LLMClient` é a porta assíncrona. `LLMConfig` configura modelos
-separados por papel, timeout HTTP e teto por chamada de 4,5 s e limite de 16.000
-tokens por conversa (D-034; a tarefa 8 usava 2 s, 2,5 s e 4.000). O teto efetivo de
+separados por papel, timeout HTTP e teto por chamada de 7 s — o p99.9 por chamada
+(D-038; D-034 usava 4,5 s) — e limite de 16.000 tokens por conversa. O teto efetivo de
 cada etapa vem de `TurnConfig`, que passa ao cliente o menor entre o teto da etapa e
-o que resta do turno. `OpenRouterLLMClient` envia JSON Schema estrito e exige suporte
+o que resta do turno; a chamada que estoura ou volta indisponível é refeita uma vez,
+dentro do mesmo prazo. `OpenRouterLLMClient` envia JSON Schema estrito e exige suporte
 do provedor (`require_parameters`); não envia `parallel_tool_calls`, que nenhum
 endpoint aceita junto com essa exigência (D-033).
 Erros não transportam corpo HTTP nem credenciais. `BudgetedLLMClient` compartilha
@@ -342,6 +343,13 @@ mantido para não disputar a janela de hedge de 100 ms (D-015, supera D-014).
 InspectQuoteTrace e leitor SQLite através do wiring. Mostra tentativas por ordem
 de início, seguidas do desfecho; ausência de desfecho é explícita. Modo somente
 leitura. Pacotes planos de src são instalados por uv sync, incluindo schema.sql.
+
+Com `--conversation <id>`, `InspectConversation` lê a conversa inteira, turno a turno:
+estado final de cada turno no checkpointer, timeline, tentativas, mensagem ao lead e
+decisão de escalação com o snapshot, costurados pelo `trace_id`. O adapter
+`interfaces.conversation_report` formata em markdown; nada é reexecutado e tudo abre
+somente leitura. `scripts/execution_log.py` roda uma conversa do dataset e grava essa
+saída em `docs/execucao-completa.md` e `docs/execucao-escalacao.md`.
 
 ### Cache exato
 
@@ -717,8 +725,11 @@ logs, contexto de LLM e trace. O CEP, único slot que a redação alcança, é g
 a reinício. Primeiro valor imutável; os demais slots ficam no checkpointer (D-036).
 
 Retenção: encerrar a conversa purga `conversations.slots` e apaga o estado do grafo.
-A recusa final encerra automaticamente. Enquanto a conversa está aberta, o CEP fica em
-claro no SQLite; cifragem em repouso e encerramento por inatividade são evolução.
+A recusa final encerra automaticamente. Conversa aberta sem mensagem do lead há mais de
+24 h é encerrada pelo mesmo caminho, na partida e no início de cada turno, sem agendador;
+lead que volta reabre a conversa (D-038). Enquanto a conversa está aberta, o CEP fica em
+claro no SQLite. Cifrar em repouso foi descartado por decisão: processo único, dado de
+vida curta e chave no mesmo disco. A purga é o controle.
 
 ---
 
@@ -898,18 +909,19 @@ thread, encadeada (D-033).
 
 | Recurso | Limite |
 |---|---|
-| Turno completo | 10 s, com deadline propagation (era 6 s) |
-| Extração | até 3,5 s (p99 medido 3,07 s) |
-| Fala do conversador | até 4,5 s (p99 medido 4,38 s) |
+| Turno completo | 18 s, com deadline propagation: soma do caminho no p99.9 (era 10 s) |
+| Extração | até 7 s por tentativa, um retry (p99.9 isolado 6,90 s) |
+| Fala do conversador | até 7 s por tentativa, um retry |
 | Cotação (cadeia) | até 3,5 s |
 | Chamada individual à `/quote` | 2 s |
-| Chamada individual ao LLM | 4,5 s |
+| Chamada individual ao LLM | 7 s |
 | Disparo do hedge | 100 ms, calibrado no p99 local |
 | Tentativas de cotação | 3, dentro do orçamento restante |
-| Tokens por conversa | 16.000 (máximo medido 9.445); excedê-lo escala |
+| Tokens por conversa | 16.000 (máximo medido 9.705); excedê-lo escala |
 
-Valores de `TurnConfig` e `LLMConfig`, medidos sem corte em conversas reais do
-dataset (D-034): o turno inteiro teve p50 de 1,76 s e p99 de 4,97 s.
+Valores de `TurnConfig` e `LLMConfig` (D-034, recalibrados em D-038). Medidos na mesma
+amostra de 150 conversas: turno p50 1,58 s, p99 5,05 s, máximo 8,25 s. O teto é o pior
+caso; a espera típica não mudou.
 
 O orçamento decresce: se a extração consome 3s, restam 3s para a cotação. Esgotado
 o orçamento, a execução para de tentar e transita limpa para a rota de

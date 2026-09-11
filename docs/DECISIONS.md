@@ -653,3 +653,33 @@ resolução nunca acontece e imagem e áudio seguem os ramos sem resolução. Os
 resolvidos são exercitados de verdade só pelas quatro fixtures em `tests/fixtures/media`.
 Na fixture real, a transcrição trocou "Ônix" por "anix" — é por isso que slot transcrito
 exige confirmação.
+
+## D-038 — Teto de LLM por conversa (p99.9 com um retry) e purga por inatividade
+**Data:** 2026-09-11
+**Contexto:** cortes de LLM eram 9 das 11 interrupções não previstas da tarefa 10, 8 delas
+entre as 74 elegíveis sem documento (11%) e todas na extração. Os tetos estavam logo acima
+do p99 **por chamada** (3,5 s na extração, 4,5 s na fala); com cerca de dez chamadas por
+conversa, isso é ~10% **por conversa**. Nas 7.499 chamadas isoladas do extrator: p99
+3,25 s, p99.9 6,90 s, máximo 14,6 s. O conversador tem 321 chamadas fim a fim, censuradas
+em 4,5 s — pouco para um p99.9 —, mas a mesma mediana e a mesma causa de cauda (a ida ao
+provedor, D-034). Em paralelo, o lead que abandona a conversa nunca a encerra, e o CEP de
+D-036 ficaria em `conversations.slots` para sempre.
+**Alternativas:** para o teto, só retry com teto no p99, só teto no p99.9, ou hedge da
+chamada de LLM; para a retenção, agendador, cifragem do CEP em repouso ou nada.
+**Decisão:** teto de 7 s por chamada (p99.9 do extrator, aplicado também à fala) em
+`TurnConfig` e em `LLMConfig`. A chamada que estoura o teto ou volta indisponível é refeita
+uma vez: geração não tem efeito colateral, e a tool `cotar` só executa depois, no grafo.
+Configuração, contrato e estouro de tokens não são retentados. Cada tentativa usa o menor
+entre o teto e o que resta do turno; o turno passa de 10 s para 18 s, a soma do caminho no
+p99.9 (7 + 7 + 3,5). Retenção: purga oportunista, sem agendador — na partida e no início de
+cada turno, conversa aberta sem mensagem do lead há mais de 24 h (a janela de atendimento
+do WhatsApp) é encerrada pelo mesmo caminho do encerramento: slots, estado do grafo e
+status. Lead que volta reabre a conversa; sem isso, a reaberta sairia da purga. Falha da
+purga no turno é registrada e não custa a resposta. **Cifrar o CEP em repouso não é feito,
+por decisão, não por omissão**: SQLite local de processo único, dado de vida curta (no
+máximo 24 h de inatividade) e a chave ficaria no mesmo disco. A purga é o controle.
+**Consequência:** mesmas 150 conversas: 64 → 73 cotadas (48,7%); elegíveis sem documento
+73/74 (98,6%); LLM cortado 9 → 0. O retry disparou uma vez, na extração, e recuperou o
+turno; resta uma cotação indisponível. Turno p50 1,58 s, p99 5,05 s, máximo 8,25 s: 18 s é
+o pior caso, não a espera típica. A retenção de 24 h é parâmetro de `open_sales_stack`; a
+varredura por turno não tem índice em `atualizada_em` e precisa de um se a tabela crescer.

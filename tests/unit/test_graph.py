@@ -273,6 +273,78 @@ def test_llm_configuration_error_is_traced_and_fails_the_turn(plans_payload, quo
         with pytest.raises(LLMConfigurationError):
             clock.run(graph.turn("c", "m1", "Oi"))
     assert "HTTP 404: No endpoints found" in recorded(recorder)["converse_falha"].erro
+    assert leaf.complete.await_count == 1  # configuração não melhora na segunda tentativa
+
+
+def slow_then(clock, seconds, result, *, times=1):
+    """Duplo que dorme além do teto nas primeiras `times` chamadas e depois responde."""
+    calls = 0
+
+    async def call(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls <= times:
+            await clock.sleep(seconds)
+        return result
+
+    return call
+
+
+def test_extraction_over_ceiling_is_retried_once_and_turn_completes(plans_payload, quote_payload):
+    recorder = Mock()
+    config = TurnConfig(budget_seconds=30.0, extraction_seconds=2.0)
+    with virtual_time() as clock:
+        graph, extractor, *_ = build(
+            clock, plans_payload, quote_payload, config=config, recorder=recorder
+        )
+        extractor.extract.side_effect = slow_then(clock, 5.0, ExtractionResult(slots()))
+        result = clock.run(graph.turn("c", "m1", "Tenho trinta anos"))
+    assert result["status"] == "cotada"
+    assert extractor.extract.await_count == 2
+    assert recorded(recorder)["extract_falha"].status == "TimeoutError"
+    assert result["tempos_ms"]["extract"] == pytest.approx(2000)
+
+
+def test_second_llm_timeout_escalates_as_llm_without_third_attempt(plans_payload, quote_payload):
+    config = TurnConfig(budget_seconds=30.0, conversation_seconds=2.0)
+    with virtual_time() as clock:
+        graph, _, converse, quote, handoff = build(
+            clock, plans_payload, quote_payload, config=config
+        )
+        converse.converse.side_effect = slow_then(
+            clock, 5.0, ConversationResult("", None, "completo"), times=2
+        )
+        result = clock.run(graph.turn("c", "m1", "Pode cotar"))
+    assert (result["status"], result["erro"]) == ("escalada", "llm")
+    assert converse.converse.await_count == 2
+    assert handoff.call_args.args[2].motivo is HandoffReason.LINGUAGEM
+    quote.quote.assert_not_called()
+
+
+def test_llm_retry_never_outlives_the_turn_budget(plans_payload, quote_payload):
+    config = TurnConfig(budget_seconds=6.0, conversation_seconds=4.0)
+    with virtual_time() as clock:
+        graph, _, converse, *_ = build(clock, plans_payload, quote_payload, config=config)
+        converse.converse.side_effect = slow_then(
+            clock, 10.0, ConversationResult("", None, "completo"), times=2
+        )
+        result = clock.run(graph.turn("c", "m1", "Pode cotar"))
+        elapsed = clock.monotonic()
+    assert (result["status"], result["erro"]) == ("escalada", "prazo")
+    assert converse.converse.await_count == 2
+    assert elapsed == pytest.approx(6.0)
+
+
+def test_fast_transient_llm_failure_is_retried(plans_payload, quote_payload):
+    failure = LLMUnavailable(detalhe="HTTP 503: sobrecarga do provedor")
+    speech = speaking("Posso ajudar com a cotação.").complete.side_effect
+    leaf = AsyncMock(complete=AsyncMock(side_effect=[failure, *speech]))
+    with virtual_time() as clock:
+        graph, *_ = build(clock, plans_payload, quote_payload, converser=Converser(leaf))
+        result = clock.run(graph.turn("c", "m1", "Oi"))
+    assert result["status"] == "ativa"
+    assert result["texto"] == "Posso ajudar com a cotação."
+    assert leaf.complete.await_count == 2
 
 
 def test_message_without_objection_does_not_route_to_node(plans_payload, quote_payload):
