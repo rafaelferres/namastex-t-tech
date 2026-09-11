@@ -4,6 +4,30 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Added — Tarefa 6, 2026-09-11
+
+- Apresentação pura de prêmio, franquia, coberturas, carência e pro-rata com
+  Decimal e formato brasileiro. Doze goldens da API original cobrem os três
+  planos, CEP normal/agravado e presença/ausência de pro-rata. Mensagens de recusa,
+  indisponibilidade e transição têm redação provisória, sem LLM.
+- Política determinística com sete regras ordenadas, laço configurável e decisão
+  negativa auditável. Sugestão isolada do LLM não escala; divergência é preservada.
+  Snapshot imutável reúne slots com proveniência e tentativas existentes, com CEP
+  redigido na cópia. Recusa e erro de contrato não acionam cotação esgotada.
+- Script mede insert/commit síncrono de trace em WAL/FULL: 500 amostras por local,
+  mediana 6,398 ms e p99 9,481 ms no /tmp; 6,071 ms e 29,969 ms no workspace.
+
+### Changed — Tarefa 6
+
+- Worker mantido pela medição; drenagem automática na fronteira de ApplicationTrace,
+  sem flush manual e fora do orçamento do retry. Cancelar worker e consumidor juntos
+  não deixa barreiras pendentes. Overflow/erro continuam best effort.
+- Simulações marcadas slow. Portão rápido: **324 passed, 8 deselected in 6.35s**
+  com `uv run pytest -m "not slow"`, sem rede ou sleep real; 332 casos coletados.
+  Ruff limpo em src/tests/scripts; mypy estrito limpo em 36 arquivos de src.
+- ProductFacts definido no domínio e reexportado pelo parse de planos, mantendo
+  o template independente de infraestrutura. D-015 a D-017 registram alternativas.
+
 ### Added — Tarefa 5, 2026-09-11
 
 - Cadeia instrumentada como ApplicationTrace → Guard → Cache → Retry → Hedge →

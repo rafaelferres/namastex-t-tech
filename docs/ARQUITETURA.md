@@ -263,9 +263,13 @@ são UTC; normalização continua usando o calendário local da API.
 
 AttemptRecorder.record é uma entrega síncrona não bloqueante. O adapter
 BufferedAttemptRecorder limita a fila a 1.024 pendentes, escreve fora do caminho
-de resposta e registra falha/overflow sem PII. Drenar com flush antes de inspeção
-ou fechamento. Crash pode perder pendentes. A regressão de recusa rápida virar
-indisponibilidade por espera de gravação foi reproduzida e corrigida (D-014).
+do retry e registra falha/overflow sem PII. ApplicationTrace chama automaticamente
+finish(trace_id) após submeter o desfecho, antes de retornar, inclusive em erro ou
+cancelamento. A barreira aguarda até o último evento daquele trace; não requer
+flush manual. Cancelar o worker conclui as barreiras pendentes antes de propagar
+cancelamento. Crash ainda pode perder pendentes. A latência lógica registrada
+exclui a drenagem final. WAL/FULL medido: mediana ~6 ms, p99 até ~30 ms; worker
+mantido para não disputar a janela de hedge de 100 ms (D-015, supera D-014).
 
 `python -m interfaces.trace <trace_id> --database arquivo.sqlite` usa
 InspectQuoteTrace e leitor SQLite através do wiring. Mostra tentativas por ordem
@@ -386,7 +390,8 @@ Cada FaixaAceitacao guarda mínimo, máximo e motivo opcional de recusa,
 preservando a ordem do catálogo (D-001).
 
 `PlanosClient.get()` entrega as duas projeções do mesmo GET, construídas em
-`infrastructure/planos/projections.py`. ProductFacts por plano contém apenas id,
+`infrastructure/planos/projections.py`. ProductFacts é definido em domain/product.py
+e reexportado pelo módulo de projeções. Por plano contém apenas id,
 nome, coberturas e `tem_carencia`, derivado de dias positivos e coberturas aplicáveis.
 Não guarda preço, franquia, duração numérica de carência ou o payload original.
 `current()` expõe AcceptanceRules para o guard e retorna None se o catálogo
@@ -448,6 +453,25 @@ O LLM emite um sinal estruturado (`sugere_escalacao`, `motivo_sugerido`) como
 insumo adicional. A política decide. As duas opiniões são gravadas, e a divergência
 é métrica.
 
+Implementado em domain/handoff.py: HandoffPolicy avalia a lista de regras na
+ordem da tabela e para na primeira que dispara. LacoEsclarecimento tem limiar
+configurável, padrão três tentativas sem avanço no mesmo slot; o estado futuro
+deve zerar a contagem quando houver progresso. Objeção de preço não equivale a
+pedido explícito de desconto. Os classificadores desses sinais ainda não existem.
+
+ConversationContext reúne os cinco slots e proveniência digitado/transcrito,
+mídia/resolução, resultado final da cadeia e sinais explícitos. A política retorna
+HandoffDecision também quando não escala: preserva sugestao_llm e divergencia.
+Silêncio do modelo contra decisão positiva diverge; motivos positivos diferentes
+também divergem. Sugestão isolada nunca escala. QuoteContractError e Declined
+não acionam a regra de cotação esgotada.
+
+Snapshot copia slots de forma imutável e redige o CEP nessa cópia. Reutiliza os
+registros QuoteAttempt existentes por protocolo estrutural de leitura, sem
+segunda representação das tentativas e sem importar application no domínio.
+A proveniência é preservada; o pedido original continua com seu CEP para cotar.
+Persistência da decisão e integração com estado do grafo ficam para próximas fases.
+
 ### Efeitos da escalação
 
 `HandoffDecision` é domínio puro. Os efeitos passam pelo `HandoffSink`, nesta
@@ -506,6 +530,14 @@ Duas coisas que a baseline humana erra em 2.500 de 2.500 conversas:
   ausência do campo não é zero, é "não se aplica"
 
 ---
+
+O renderer puro implementado em agent/templates recebe payload (ou Quote validado)
+e ProductFacts. Usa nome do catálogo e valores, coberturas, carência e pro-rata da
+cotação. Decimal é formatado sem float nem arredondamento implícito; frações de
+centavo significativas e coberturas desconhecidas causam QuoteContractError.
+Existem 12 goldens da implementação original da API: três planos, CEP normal ou
+agravado, com ou sem pro-rata. Mensagens de recusa, indisponibilidade e transição
+são determinísticas e têm redação explicitamente provisória.
 
 ## 10. Pipeline de mídia
 

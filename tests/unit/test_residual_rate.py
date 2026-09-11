@@ -17,6 +17,7 @@ from tests.virtual_time import Timeline, virtual_time
 TRIALS = 10_000
 SEED = 42
 CONFIG = QuoteConfig()
+pytestmark = pytest.mark.slow
 
 
 class ProbabilisticApi:

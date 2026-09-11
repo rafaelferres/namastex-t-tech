@@ -44,7 +44,6 @@ async def demo(url: str, database: Path) -> None:
             request = QuoteRequest("completo", 30, clock.today().year)
             for _ in range(2):
                 await provider.quote(request)
-        await recorder.flush()
         rows = trace_conn.execute(
             "SELECT trace_id FROM quote_attempts WHERE conversation_id=? AND tentativa=0 "
             "ORDER BY rowid",
@@ -53,7 +52,6 @@ async def demo(url: str, database: Path) -> None:
         for row in rows:
             print(row[0])
     finally:
-        await recorder.flush()
         cache_conn.close()
         trace_conn.close()
 

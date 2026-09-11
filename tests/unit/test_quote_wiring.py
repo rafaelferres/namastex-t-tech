@@ -59,7 +59,7 @@ async def test_complete_chain(
             transport=httpx.MockTransport(handler), base_url="https://test"
         ) as client:
             provider = build_quote_provider(
-                recorder=Mock(),
+                recorder=Mock(finish=AsyncMock()),
                 correlation=ContextCorrelationProvider(lambda: Correlation("test", "conv")),
                 client=client,
                 cache=cache,
@@ -123,7 +123,7 @@ def test_wiring_enforces_configured_deadline(budget: float) -> None:
             ) as client:
                 cache = AsyncMock(get=AsyncMock(return_value=None))
                 provider = build_quote_provider(
-                    recorder=Mock(),
+                    recorder=Mock(finish=AsyncMock()),
                     correlation=ContextCorrelationProvider(lambda: Correlation("test", "conv")),
                     client=client,
                     cache=cache,

@@ -5,7 +5,7 @@ import json
 from datetime import date, datetime, timedelta, timezone
 from itertools import count
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -27,7 +27,7 @@ def correlation() -> ContextCorrelationProvider:
 @pytest.mark.parametrize("status", [200, 422, 400, 503])
 def test_wire_records_http_and_latency(status: int, quote_payload: dict[str, Any]) -> None:
     with virtual_time() as timeline:
-        recorder = Mock()
+        recorder = Mock(finish=AsyncMock())
         context = correlation()
 
         async def respond(req: httpx.Request) -> httpx.Response:
@@ -68,7 +68,7 @@ def test_wire_records_http_and_latency(status: int, quote_payload: dict[str, Any
 
 def test_three_failures_record_each_wire_and_logical_resolution() -> None:
     with virtual_time() as timeline:
-        recorder = Mock()
+        recorder = Mock(finish=AsyncMock())
         ctx = correlation()
         leaf = ScriptedProvider(timeline, *(Step(QuoteUnavailable(), 0.01) for _ in range(3)))
         wire = WireTrace(leaf, recorder, ctx, timeline)
@@ -94,7 +94,7 @@ def test_three_failures_record_each_wire_and_logical_resolution() -> None:
 
 def test_hedge_loser_is_recorded_with_cancellation() -> None:
     with virtual_time() as timeline:
-        recorder = Mock()
+        recorder = Mock(finish=AsyncMock())
         ctx = correlation()
         leaf = ScriptedProvider(timeline, Step(Declined("slow"), 8), Step(Declined("fast"), 0.01))
         wire = WireTrace(leaf, recorder, ctx, timeline)
@@ -118,7 +118,7 @@ def test_hedge_loser_is_recorded_with_cancellation() -> None:
 def test_record_failure_does_not_break_quote(layer: type, caplog: pytest.LogCaptureFixture) -> None:
     with virtual_time() as timeline:
         result = Declined("Recusado")
-        recorder = Mock(record=Mock(side_effect=RuntimeError("CEP 01310100")))
+        recorder = Mock(finish=AsyncMock(), record=Mock(side_effect=RuntimeError("CEP 01310100")))
         provider = layer(
             ScriptedProvider(timeline, Step(result)), recorder, correlation(), timeline
         )
@@ -136,7 +136,7 @@ def test_cancelled_normalization_uses_api_calendar_not_utc_year() -> None:
             monotonic=timeline.monotonic,
         )
         ctx = correlation()
-        recorder = Mock()
+        recorder = Mock(finish=AsyncMock())
         wire = WireTrace(
             ScriptedProvider(timeline, Step(Declined("slow"), 8), Step(Declined("fast"))),
             recorder,
@@ -160,7 +160,7 @@ def test_concurrent_quotes_keep_correlation_and_http_status_separate(
     with virtual_time() as timeline:
         sequence = count(1)
         ctx = ContextCorrelationProvider(lambda: Correlation(f"trace-{next(sequence)}", "conv"))
-        recorder = Mock()
+        recorder = Mock(finish=AsyncMock())
 
         async def respond(req: httpx.Request) -> httpx.Response:
             age = json.loads(req.content)["idade"]
