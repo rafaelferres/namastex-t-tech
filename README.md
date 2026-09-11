@@ -14,12 +14,11 @@ Pré-requisitos: Docker, [uv](https://docs.astral.sh/uv/), e uma chave de API do
 provedor de LLM.
 
 ```bash
-# 1. API de cotação (do repo do desafio) + Postgres + Redis
+# 1. API de cotação (do repo do desafio). A aplicação não tem serviço de dados.
 docker compose up --build          # quote-api em :8000
 
-# 2. dependências e migrations
+# 2. dependências. O esquema SQLite é aplicado no startup.
 uv sync
-uv run alembic upgrade head
 
 # 3. variáveis
 cp .env.example .env               # preencha LLM_API_KEY
@@ -196,15 +195,16 @@ Efeito colateral útil: numa recusa por regra, o conversador nem é chamado — 
 política decide e o template escreve. 30% dos leads são atendidos com uma chamada
 de LLM em vez de duas.
 
-### 8. A chave do lead é o hash do CPF
+### 8. A chave do lead é a identidade de canal
 
 `sender_name` não é identidade: 336 nomes distintos para 2.500 conversas.
 "Joao Gomes" aparece em 17 conversas que são pessoas diferentes, com idades e
-veículos distintos. Os CPFs são 2.500 distintos, sem repetição.
+veículos distintos. Chavear por nome funde 17 pessoas num registro só.
 
-Chavear lead por nome funde até 17 pessoas num registro só. E o CPF é o dado que
-precisa ser hasheado por privacidade de qualquer forma — uma decisão atende os
-dois critérios.
+O CPF seria único, mas **o agente não pede CPF** (ver decisão 1 sobre coleta
+mínima), então ele não existe em tempo real. A chave é `wa_id` no WhatsApp e
+`conversation_id` no replay. O hash do CPF fica como atributo opcional, preenchido
+quando o lead informa espontaneamente.
 
 ### 9. Ordenação por `message_index`, nunca por `timestamp`
 
@@ -230,6 +230,52 @@ adapter.
 `OutboundMessage` é persistido antes de entregue — é a tabela outbox, e resolve a
 entrega duplicada ou perdida se o processo cair entre gravar e enviar.
 
+### 11. Ano-modelo futuro é normalizado no payload
+
+A API calcula a idade do veículo como `ano_atual − ano_modelo`. No Brasil, modelo
+do ano seguinte é rotineiro a partir do segundo semestre — um 2027 vendido em
+2026. Isso produz idade −1, nenhuma faixa cobre valor negativo, e a API devolve
+`422`: recusa de um carro zero-quilômetro.
+
+Normalizar só na validação local criaria divergência — o guard aceitaria e a API
+recusaria depois de uma ida à rede. Por isso a requisição sai com
+`veiculo_ano = min(veiculo_ano, ano_atual)`.
+
+É neutro em preço, já que a faixa de 0 a 5 anos tem multiplicador único: contorna
+um off-by-one do sistema legado sem alterar valor. Com três limites: normaliza
+apenas um ano à frente, nunca no sentido inverso, e grava
+`quote_attempts.ano_normalizado` — ajustar dado do usuário antes de enviar à fonte
+de verdade precisa aparecer na auditoria.
+
+Dois ou mais anos no futuro não é ano-modelo, é erro de digitação. Aí o agente
+confirma com o lead.
+
+O dataset cobre 2001 a 2024, então nenhum caso aparece no replay. A armadilha só
+existe em produção.
+
+### 12. SQLite, sem serviço de dados externo
+
+O sistema roda em processo único. Nessa topologia, lock por conversa é
+`asyncio.Lock`, debounce é janela em memória, e dedup de webhook é índice único em
+`provider_message_id`. Nenhum deles precisa de servidor.
+
+Postgres e Redis estavam no desenho inicial por sinalizarem caminho de produção.
+Mas uma dependência que o código não exercita custa mais credibilidade do que
+agrega — Redis presente no `docker-compose` e ausente do caminho crítico lê pior
+que a ausência dele.
+
+O cache de cotação ficou melhor como tabela do que como Redis: fica visível no
+console de trace ao lado das tentativas, o que torna o nível N2 da escada
+demonstrável em vez de invisível.
+
+Uma consequência que exige disciplina: SQLite não tem tipo decimal. Valor
+monetário é `TEXT` com o `Decimal` serializado, nunca `REAL`. Erro de ponto
+flutuante num sistema cuja invariante principal é a integridade do preço seria
+irônico demais.
+
+O gatilho para reintroduzir um serviço externo é topologia com múltiplos workers,
+não volume de dados.
+
 ---
 
 ## Arquitetura
@@ -244,7 +290,7 @@ src/
 ```
 
 Hexagonal, dependência sempre para dentro. `domain/` e `application/` não
-importam `langgraph`, `httpx`, `redis` nem `sqlalchemy` — o grafo é detalhe de
+importam `langgraph`, `httpx` nem `sqlite3` — o grafo é detalhe de
 orquestração, não o núcleo. É isso que permite testar toda a política de handoff
 sem subir nada.
 
@@ -329,7 +375,7 @@ zero e o handoff virou transferência de problema.
 
 ## Rastreabilidade
 
-Postgres é fonte da verdade. A tabela central:
+SQLite é a única dependência de dados. A tabela central:
 
 ```sql
 quote_attempts (
@@ -407,7 +453,7 @@ não pede CPF para cotar.
 
 ```
 tests/unit/          domínio, decorators, políticas, templates — ms, sem I/O
-tests/integration/   Postgres, Redis, /quote com QUOTE_SEED fixo
+tests/integration/   SQLite em memória, /quote com QUOTE_SEED fixo
 tests/golden/        extração contra 2.500 casos com ground truth
 tests/regression/    as 751 conversas inelegíveis
 ```
@@ -470,12 +516,12 @@ ao handoff com contexto completo. Um N3 meia-boca é pior que um handoff honesto
 
 ## Limitações conhecidas
 
-- **Lock por conversa e debounce de rajada** estão implementados mas só são
-  exercitados pelo webhook. Nos adapters síncronos não há concorrência real. O
-  dataset mostra que a rajada existe (23,1% dos turnos do lead têm 2+ mensagens,
-  pico de 6), mas a demonstração completa depende do canal real.
-- **Postgres e Redis** são mais do que este escopo exige — SQLite resolveria. A
-  escolha foi por caminho de produção, não por necessidade.
+- **Debounce de rajada** só é exercitado de verdade pelo webhook. O dataset mostra
+  que a rajada existe (23,1% dos turnos do lead têm 2+ mensagens, pico de 6), mas a
+  demonstração completa depende do canal real.
+- **Lock, debounce e dedup** funcionam em processo único. Numa topologia com
+  múltiplos workers eles precisariam de coordenação externa — esse é o gatilho
+  para reintroduzir um serviço como Redis, e não antes dele.
 - **Mídia** é detectada e escalada, nunca interpretada. Transcrição de áudio e
   OCR de CNH ficaram fora.
 - A **fração de leads inelegíveis cresce com o tempo**, porque a regra de idade do
