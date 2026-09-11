@@ -42,7 +42,8 @@ uv run python -m interfaces.replay --conversation conv_00013
 Testes:
 
 ```bash
-uv run pytest                      # offline, sem rede, segundos
+uv run pytest -m "not slow"        # loop rápido, offline
+uv run pytest -m slow              # simulações estatísticas determinísticas
 uv run pytest -m eval              # avaliação de LLM, consome API
 ```
 
@@ -524,8 +525,9 @@ falha: cada rodada pode chegar a 2,1 s. Sem hedge, dois timeouts de 2 s já ultr
 A cadeia completa é montada em `infrastructure.wiring.build_quote_provider`.
 O chamador injeta cliente, cache, regras, relógio, sleep, RNG, correlação e recorder.
 `BufferedAttemptRecorder(SQLiteAttempts(conexao_trace).record)` entrega eventos
-sem bloquear a cotação; use conexão de trace distinta da conexão do cache, no mesmo
-arquivo SQLite. Chame `await recorder.flush()` antes de inspecionar ou fechar.
+sem disputar o orçamento do retry; use conexão de trace distinta da conexão do cache,
+no mesmo arquivo SQLite. ApplicationTrace aguarda automaticamente `finish(trace_id)`
+antes de retornar, inclusive em erro; não há flush manual na fronteira do chamador.
 A fila comporta 1.024 eventos pendentes e descarta com aviso se lotar; queda abrupta
 pode perder eventos pendentes. Nenhum payload ou mensagem de exceção é registrado.
 Os 3,5 s cobrem Retry/Hedge/HTTP; deadline do turno completo ainda precisa incluir
@@ -607,3 +609,28 @@ Foi gerada por replay de uma conversa real do dataset, com `QUOTE_SEED` fixo.
 a análise exploratória do dataset que produziu os números deste README e as
 decisões que foram revistas no caminho — RAG descartado, circuit breaker
 rejeitado, base de conhecimento retirada do prompt.
+
+### Núcleo determinístico de apresentação e escalação (tarefa 6)
+
+`agent.templates.render_quote` renderiza a cotação validada com ProductFacts:
+prêmio e franquia em reais, coberturas, carência do payload e pro-rata apenas
+quando presente. Os 12 goldens cobrem três planos, dois perfis de CEP e os dois
+casos de pro-rata, capturados da implementação original da API sem rede.
+Textos auxiliares são provisórios. A política pura avalia sete regras ordenadas;
+a sugestão do LLM é registrada, mas não decide sozinha. Snapshot preserva slots
+com proveniência e os registros de tentativas, com CEP redigido na cópia.
+
+A gravação síncrona de trace foi medida com WAL/FULL, 500 amostras e 20 warmups:
+
+| Arquivo SQLite | Mediana | p95 | p99 | Máximo |
+|---|---:|---:|---:|---:|
+| /tmp nativo | 6,398 ms | 8,448 ms | 9,481 ms | 16,909 ms |
+| workspace /mnt/c | 6,071 ms | 10,201 ms | 29,969 ms | 53,187 ms |
+
+O worker permanece: essa cauda importa numa janela de hedge de 100 ms.
+ApplicationTrace drena automaticamente antes de retornar, fora do retry.
+Medições brutas: `docs/measurements/task6-trace-native.json` e
+`docs/measurements/task6-trace-workspace.json`; reprodução pelo script
+`scripts/measure_trace_write.py --help`. Esse custo é local e precisa ser
+remedido no ambiente de execução. Os testes estatísticos usam a marca `slow`;
+o loop de desenvolvimento é `uv run pytest -m "not slow"`.

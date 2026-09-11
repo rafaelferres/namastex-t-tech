@@ -4,15 +4,8 @@ from dataclasses import dataclass
 
 from domain._parsing import mapping, nonnegative_integer, sequence, string, strings
 from domain.acceptance import AcceptanceRules
+from domain.product import ProductFacts as ProductFacts
 from domain.quote import QuoteContractError
-
-
-@dataclass(frozen=True, slots=True)
-class ProductFacts:
-    plano_id: str
-    nome: str
-    coberturas: tuple[str, ...]
-    tem_carencia: bool
 
 
 @dataclass(frozen=True, slots=True)

@@ -44,9 +44,8 @@ def test_slow_recording_cannot_turn_refusal_into_unavailability() -> None:
 
         async def run() -> None:
             assert await app.quote(QuoteRequest("completo", 30, 2026)) is result
-            assert timeline.monotonic() == 0.01
+            assert timeline.monotonic() == 8.01
             assert len(leaf.requests) == 1
-            await recorder.flush()
 
         timeline.run(run())
         assert [event.status for event in events] == ["declined", "declined"]
@@ -64,7 +63,6 @@ def test_recording_failures_are_best_effort(caplog) -> None:
 
         async def run() -> None:
             await app.quote(QuoteRequest("completo", 30, 2026))
-            await recorder.flush()
 
         timeline.run(run())
         assert "trace_record_failed" in caplog.text
@@ -96,14 +94,14 @@ def test_full_buffer_drops_and_logs_without_blocking(caplog) -> None:
         async def run() -> None:
             recorder.record(event())
             recorder.record(event())
-            await recorder.flush()
+            await recorder.finish("trace")
 
         timeline.run(run())
         sink.assert_awaited_once()
         assert "trace_buffer_full" in caplog.text
 
 
-def test_cancelled_flush_drains_before_connection_owner_can_close() -> None:
+def test_cancelled_finish_drains_before_connection_owner_can_close() -> None:
     with virtual_time() as timeline:
         saved = []
 
@@ -115,10 +113,48 @@ def test_cancelled_flush_drains_before_connection_owner_can_close() -> None:
 
         async def run() -> None:
             recorder.record(event())
-            flush = asyncio.create_task(recorder.flush())
+            flush = asyncio.create_task(recorder.finish("trace"))
             asyncio.get_running_loop().call_soon(flush.cancel)
             with pytest.raises(asyncio.CancelledError):
                 await flush
             assert saved == [event()]
+
+        timeline.run(run())
+
+
+@pytest.mark.parametrize("cancel_caller", [False, True])
+def test_worker_cancellation_settles_queued_deliveries(cancel_caller) -> None:
+    with virtual_time() as timeline:
+        started = asyncio.Event()
+        saved = []
+        workers = []
+
+        async def write(record) -> None:
+            if not workers:
+                workers.append(asyncio.current_task())
+                started.set()
+                await asyncio.Event().wait()
+            saved.append(record)
+
+        recorder = BufferedAttemptRecorder(write)
+
+        async def run() -> None:
+            recorder.record(event())
+            recorder.record(event())
+            await started.wait()
+            caller = asyncio.create_task(recorder.finish("trace"))
+            await timeline.sleep(0.001)
+            worker = workers[0]
+            worker.cancel()
+            if cancel_caller:
+                caller.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await worker
+            assert saved == [event()]
+            if cancel_caller:
+                with pytest.raises(asyncio.CancelledError):
+                    await caller
+            else:
+                await caller
 
         timeline.run(run())

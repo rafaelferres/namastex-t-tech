@@ -67,7 +67,6 @@ async def test_logical_origins_and_shared_correlation(
                 await provider.quote(
                     QuoteRequest(sorted(rules.planos_validos)[0], request_age, 2026)
                 )
-        await buffer.flush()
         local = await recorder.read("trace-1")
         api = await recorder.read("trace-2")
         cache = await recorder.read("trace-3")

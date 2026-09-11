@@ -236,3 +236,56 @@ antes da inspeção/fechamento. A conexão do cache continua distinta, no mesmo 
 eventos em overflow ou crash, e leituras anteriores ao flush podem ser parciais.
 O consumidor deve aguardar todos os produtores, drenar e só então fechar conexões.
 Isso é best effort explícito, sem fila durável ou outras tabelas nesta fase.
+
+
+## D-015 — Worker medido e drenagem automática por cotação
+**Data:** 2026-09-11
+**Contexto:** a tarefa 6 pediu medir insert síncrono antes de manter a fila de D-014.
+500 inserts/commits reais, após 20 warmups, WAL/FULL: no /tmp mediana 6,398 ms,
+p95 8,448 ms, p99 9,481 ms, máximo 16,909 ms; no workspace mediana 6,071 ms,
+p95 10,201 ms, p99 29,969 ms, máximo 53,187 ms. Amostras e configuração em
+measurements/task6-trace-{native,workspace}.json; script measure_trace_write.py.
+**Alternativas:** insert direto; manter flush explícito; worker com barreira lógica.
+**Decisão:** manter worker, pois o custo não é fração de milissegundo e a cauda
+compete com o hedge de 100 ms. Supera a drenagem manual de D-014: ApplicationTrace
+aguarda AttemptRecorder.finish(trace_id) automaticamente após o desfecho, inclusive
+em erro. A barreira acompanha o último evento daquele trace, sem esperar eventos
+posteriores de outras cotações. Cancelamento do consumidor aguarda a entrega;
+cancelamento do worker liquida também as barreiras enfileiradas antes de propagar.
+**Consequência:** não há flush manual para quem chama a cadeia. O retorno inclui
+custo de drenagem (e fila anterior), fora dos 3,5 s de Retry/Hedge; latencia_ms
+lógica mede até o resultado, antes da drenagem. Sob contenção esse custo ainda
+precisa entrar no deadline do turno futuro. Falhas, overflow e cancelamentos de
+escrita são registrados genericamente; crash ainda pode perder eventos pendentes.
+
+## D-016 — Apresentação exata e catálogo puro
+**Data:** 2026-09-11
+**Contexto:** template precisa do nome do plano sem depender de infraestrutura,
+e dinheiro não pode sofrer arredondamento silencioso no contexto Decimal.
+**Alternativas:** importar projeção de infraestrutura; duplicar DTO; arredondar
+para centavos; rejeitar valores fora do contrato de apresentação.
+**Decisão:** ProductFacts passa ao domínio, reexportado na projeção existente.
+Renderer usa Quote validado e catálogo, formata Decimal sem float e rejeita
+fração significativa de centavo, moeda divergente e cobertura desconhecida.
+Coberturas e carência vêm da cotação; não inferimos valores pelo plano. Goldens
+são saídas da implementação original da API executada offline, sem copiar fórmula.
+**Consequência:** novos códigos de cobertura exigem tradução explícita antes de
+chegar ao lead. Textos de recusa/indisponibilidade/transição são provisórios,
+mas a presença de valores e condições é verificada por 12 goldens versionados.
+
+## D-017 — Decisão negativa auditável e snapshot sem duplicar tentativas
+**Data:** 2026-09-11
+**Contexto:** retornar None quando a política não escala perderia a divergência
+quando somente o LLM sugere escalação. Ainda não existe estado de grafo concreto.
+**Alternativas:** callback de auditoria; resultado apenas positivo; DTO duplicado
+de tentativa; contexto mínimo puro e decisão explícita nos dois caminhos.
+**Decisão:** regras retornam decisão ou None; a política sempre retorna decisão
+com escalar, motivo, sugestao_llm e divergencia. Primeiro gatilho vence na ordem
+especificada; laço usa limiar configurável padrão três, equilibrando esclarecimento
+e repetição. Contexto usa cinco slots e proveniência já definidos na arquitetura.
+Snapshot positivo mantém os mesmos QuoteAttempt por protocolo estrutural somente
+leitura e copia os slots em mapa imutável, redigindo CEP sem alterar o pedido.
+**Consequência:** silêncio do modelo frente à escalação e motivos discordantes
+contam como divergência. Integração futura deve fornecer sinais explícitos,
+reiniciar contagem ao avançar e persistir também decisões negativas. A política
+não tenta detectar intenções em texto nem executa efeitos de escalação.

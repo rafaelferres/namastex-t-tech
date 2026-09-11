@@ -101,6 +101,10 @@ class ApplicationTrace(_Trace):
                         created,
                     )
                 )
+                try:
+                    await self._recorder.finish(correlation.trace_id)
+                except Exception:
+                    logger.warning("trace_finish_failed")
 
 
 def _status(

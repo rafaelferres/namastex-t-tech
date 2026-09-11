@@ -1,0 +1,25 @@
+{
+  "plano_id": "essencial",
+  "plano_nome": "Essencial",
+  "premio_mensal": 155.87,
+  "franquia": 4500,
+  "coberturas": [
+    "colisao",
+    "roubo",
+    "furto"
+  ],
+  "multiplicadores": {
+    "faixa_etaria": 1.0,
+    "idade_veiculo": 1.0,
+    "regiao": 1.3
+  },
+  "carencia": {
+    "coberturas": [
+      "roubo",
+      "furto"
+    ],
+    "dias": 30,
+    "observacao": "Coberturas de roubo e furto so passam a valer apos a carencia, contada da data de inicio da vigencia."
+  },
+  "moeda": "BRL"
+}

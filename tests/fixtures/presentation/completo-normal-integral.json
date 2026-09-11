@@ -1,0 +1,27 @@
+{
+  "plano_id": "completo",
+  "plano_nome": "Completo",
+  "premio_mensal": 209.9,
+  "franquia": 3000,
+  "coberturas": [
+    "colisao",
+    "roubo",
+    "furto",
+    "terceiros",
+    "vidros"
+  ],
+  "multiplicadores": {
+    "faixa_etaria": 1.0,
+    "idade_veiculo": 1.0,
+    "regiao": 1.0
+  },
+  "carencia": {
+    "coberturas": [
+      "roubo",
+      "furto"
+    ],
+    "dias": 30,
+    "observacao": "Coberturas de roubo e furto so passam a valer apos a carencia, contada da data de inicio da vigencia."
+  },
+  "moeda": "BRL"
+}

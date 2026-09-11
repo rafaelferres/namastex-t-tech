@@ -20,36 +20,51 @@ class BufferedAttemptRecorder:
             raise ValueError("Capacidade deve ser positiva")
         self._write = write
         self._capacity = capacity
-        self._pending: deque[QuoteAttempt] = deque()
+        self._pending: deque[tuple[QuoteAttempt, asyncio.Future[None]]] = deque()
+        self._last: dict[str, asyncio.Future[None]] = {}
         self._worker: asyncio.Task[None] | None = None
 
     def record(self, attempt: QuoteAttempt) -> None:
         if len(self._pending) >= self._capacity:
             logger.warning("trace_buffer_full")
             return
-        self._pending.append(attempt)
+        delivered: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._pending.append((attempt, delivered))
+        self._last[attempt.trace_id] = delivered
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._drain())
 
     async def _drain(self) -> None:
+        cancelled = False
         while self._pending:
-            event = self._pending.popleft()
+            event, delivered = self._pending.popleft()
             try:
                 await self._write(event)
+            except asyncio.CancelledError:
+                cancelled = True
+                logger.warning("trace_record_cancelled")
             except Exception:
                 logger.warning("trace_record_failed")
+            finally:
+                delivered.set_result(None)
+        if cancelled:
+            raise asyncio.CancelledError()
 
-    async def flush(self) -> None:
-        """Drenar antes de inspecionar/fechar; cancelamento aguarda recursos em uso."""
+    async def finish(self, trace_id: str) -> None:
+        """Barreira por cotação, chamada automaticamente na fronteira lógica."""
+        delivered = self._last.get(trace_id)
+        if delivered is None:
+            return
         cancelled = False
-        while self._worker is not None:
-            worker = self._worker
+        while True:
             try:
-                await asyncio.shield(worker)
+                await asyncio.shield(delivered)
                 break
             except asyncio.CancelledError:
                 cancelled = True
-                if worker.done():
-                    raise
+                if delivered.done():
+                    break
+        if self._last.get(trace_id) is delivered:
+            del self._last[trace_id]
         if cancelled:
             raise asyncio.CancelledError()
