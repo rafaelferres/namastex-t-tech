@@ -2,6 +2,38 @@
 
 Mudanças relevantes por fase, no formato Keep a Changelog.
 
+## [Unreleased]
+
+### Added — Tarefa 2, 2026-09-11
+
+- A folha HTTP traduz respostas para Quote, Declined ou as exceções de domínio,
+  com timeout injetado e sem retry, hedge, cache de cotação ou trace. Recusa 422
+  continua sendo resultado mesmo quando o motivo não pode ser lido do JSON.
+- Falhas 5xx sem a marca `upstream_unavailable` carregam `suspeita_contrato`,
+  mantendo sua classificação transitória. Erros de requisição do httpx, incluindo
+  transporte, timeout e decodificação de compressão, não escapam da fronteira.
+- Ano-modelo exatamente um ano à frente é normalizado apenas no payload;
+  CEP, data, request original e fingerprint são preservados. `ano_normalizado`
+  acompanha resultados e exceções por chamada, inclusive em concorrência.
+- O cliente de planos entrega regras de aceitação e fatos de produto imutáveis,
+  sem precificação ou franquia. O cache de catálogo usa TTL monotônico injetado,
+  sem reutilizar dados vencidos nem cachear erros; indisponibilidade das regras
+  permite o guard falhar aberto.
+
+### Validation
+
+- **162 testes passaram em 2,01 s**: 79 anteriores e 83 novos (59 da folha HTTP
+  e 24 de planos). Todos os testes HTTP usam MockTransport, sem rede real.
+- `uv run ruff check src tests` limpo; `uv run mypy src` sem erros em 12 arquivos.
+- Ciclos vermelhos observados para os 58 casos iniciais da folha e 24 de planos
+  antes da implementação; regressão de compressão corrompida reproduzida antes
+  da correção. Revisão independente identificou essa regressão.
+- Busca em `src/` sem `base_mensal`, `multiplicador`, `date.today()`, `time.sleep()`
+  ou uso de random. Casos de redirecionamento, cancelamento, concorrência e TTL
+  exato cobertos sem sleeps ou relógio real.
+- Os metadados não implementam trace ou persistência. A confirmação de ano dois
+  ou mais anos no futuro continua sendo responsabilidade do futuro grafo.
+
 ## [0.1.0] - 2026-09-11
 
 ### Added

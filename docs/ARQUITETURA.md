@@ -3,6 +3,10 @@
 Documento técnico do sistema. Para as decisões e seus fundamentos, ver o
 `README.md`. Para as regras que governam alterações de código, ver `AGENTS.md`.
 
+Estado após a Tarefa 2: domínio, portas, folha HTTP de cotação e cliente de
+planos com TTL em memória estão implementados. Resiliência, trace, persistência,
+grafo e adapters de entrada ainda são desenho das próximas fases.
+
 ---
 
 ## 1. Princípio organizador
@@ -247,6 +251,20 @@ vezes e o log diz "instabilidade". Mitigação: validação de schema antes do e
 e classificação de `5xx` cujo corpo não tenha `error: upstream_unavailable` como
 suspeito de contrato, marcado diferente no trace.
 
+A folha `HttpQuoteProvider` recebe AsyncClient, timeout e Clock. Executa um único
+POST, sem seguir redirecionamentos. `200` exige contrato de Quote válido; `422`
+retorna Declined com o motivo do corpo ou motivo genérico quando ele não é legível.
+Qualquer status fora da taxonomia é QuoteContractError. Erros de transporte são
+QuoteUnavailable; cancelamento da tarefa não é convertido em falha transitória.
+
+`QuoteUnavailable.suspeita_contrato` marca somente 5xx sem a identificação
+`upstream_unavailable`; isso é uma suspeita, não prova de bug. Continua retentável.
+Mensagens das exceções não reproduzem corpo HTTP ou erro de transporte original.
+
+`ano_normalizado` acompanha Quote, Declined e ambas as exceções por chamada,
+sem estado compartilhado no provider (D-003). Nenhum status HTTP entra nos objetos
+de domínio. O futuro trace consumirá esses metadados; ele ainda não foi implementado.
+
 ### Circuit breaker
 
 Não há breaker sobre `/quote`. A falha é independente e sem estado; um breaker
@@ -264,13 +282,25 @@ tentativas quando não há serviço algum do outro lado.
 ### Aceitação
 
 ```python
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AcceptanceRules:
-    idade_min: int          # 18
-    idade_max: int          # 75
-    veiculo_anos_max: int   # 20
     planos_validos: frozenset[str]
+    faixas_idade: tuple[FaixaAceitacao, ...]
+    faixas_veiculo: tuple[FaixaAceitacao, ...]
 ```
+
+Cada FaixaAceitacao guarda mínimo, máximo e motivo opcional de recusa,
+preservando a ordem do catálogo (D-001).
+
+`PlanosClient.get()` entrega as duas projeções do mesmo GET, construídas em
+`infrastructure/planos/projections.py`. ProductFacts por plano contém apenas id,
+nome, coberturas e `tem_carencia`, derivado de dias positivos e coberturas aplicáveis.
+Não guarda preço, franquia, duração numérica de carência ou o payload original.
+`current()` expõe AcceptanceRules para o guard e retorna None se o catálogo
+estiver indisponível; erro de contrato continua explícito.
+
+O cache guarda apenas as projeções e usa TTL monotônico desde o parse válido.
+No vencimento busca novamente, sem retry nem retorno de dados vencidos (D-004).
 
 Construídas a partir de `GET /planos`, nunca hardcoded. Recusam 30% dos leads do
 histórico (11,2% por idade, 21,2% por veículo), antes de qualquer chamada de rede.
@@ -295,6 +325,11 @@ contorna um off-by-one do sistema legado sem alterar valor. Três limites:
   veículo antigo.
 - fica **registrado** em `quote_attempts.ano_normalizado`. Ajustar dado do usuário
   antes de enviar à fonte de verdade precisa aparecer na auditoria.
+
+Na folha implementada, só `ano_atual + 1` muda numa cópia do payload. Anos
+passados e dois ou mais anos à frente são enviados intactos; request e fingerprint
+originais são preservados. Para dois ou mais anos futuros, cabe ao futuro grafo
+tratar a recusa e solicitar confirmação, sem ajustar o dado silenciosamente.
 
 O dataset não contém nenhum caso — a armadilha só aparece em produção.
 

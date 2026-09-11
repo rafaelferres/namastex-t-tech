@@ -14,14 +14,32 @@ from domain._parsing import mapping, money, nonnegative_integer, string, strings
 class QuoteUnavailable(Exception):
     """Falha transitória de infraestrutura; pode ser retentada."""
 
+    def __init__(
+        self,
+        message: str = "Serviço de cotação indisponível",
+        *,
+        suspeita_contrato: bool = False,
+        ano_normalizado: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.suspeita_contrato = suspeita_contrato
+        self.ano_normalizado = ano_normalizado
+
 
 class QuoteContractError(Exception):
     """Requisição ou resposta inválida; não deve ser retentada."""
+
+    def __init__(
+        self, message: str = "Cotação fora do contrato", *, ano_normalizado: bool = False
+    ) -> None:
+        super().__init__(message)
+        self.ano_normalizado = ano_normalizado
 
 
 @dataclass(frozen=True, slots=True)
 class Declined:
     motivo: str
+    ano_normalizado: bool = field(default=False, kw_only=True, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +66,7 @@ class Quote:
     carencia: Carencia
     moeda: str
     primeiro_pagamento_pro_rata: ProRata | None = None
+    ano_normalizado: bool = field(default=False, kw_only=True, compare=False)
 
     @classmethod
     def from_api(cls, payload: object) -> Quote:
