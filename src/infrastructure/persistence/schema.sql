@@ -45,8 +45,22 @@ CREATE TABLE IF NOT EXISTS outbound_messages (
     status TEXT NOT NULL CHECK(status IN ('pendente','entregue','falhou')),
     tentativas INTEGER NOT NULL DEFAULT 0 CHECK(tentativas >= 0),
     criado_em TEXT NOT NULL,
-    entregue_em TEXT
+    entregue_em TEXT,
+    erro TEXT,
+    proxima_tentativa_em TEXT
 );
+
+CREATE TABLE IF NOT EXISTS turn_events (
+    id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id),
+    etapa TEXT NOT NULL,
+    status TEXT NOT NULL,
+    latencia_ms INTEGER NOT NULL,
+    erro TEXT,
+    criado_em TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_turn_events_trace ON turn_events(trace_id, criado_em);
 
 CREATE TABLE IF NOT EXISTS quote_cache (
     fingerprint TEXT PRIMARY KEY,

@@ -1,0 +1,77 @@
+{
+  "total_cases": 2500,
+  "collection": {
+    "successful_cases": 2493,
+    "failed_cases": 7,
+    "coverage": 0.9972,
+    "failures_by_kind": {
+      "contract_error": 6,
+      "unavailable": 1
+    },
+    "failed_case_ids": [
+      "conv_00777",
+      "conv_00833",
+      "conv_00893",
+      "conv_00957",
+      "conv_01538",
+      "conv_01647",
+      "conv_01988"
+    ]
+  },
+  "slots": {
+    "idade": {
+      "collected_cases": 2493,
+      "predicted_on_collected_cases": 2233,
+      "correct_on_collected_cases": 2233,
+      "semantic_errors_on_collected_cases": 260,
+      "accuracy_on_collected_cases": 0.8957079823505816,
+      "correct_all_cases": 2233,
+      "accuracy_all_cases": 0.8932,
+      "prediction_coverage_on_collected_cases": 0.8957079823505816
+    },
+    "veiculo_ano": {
+      "collected_cases": 2493,
+      "predicted_on_collected_cases": 2447,
+      "correct_on_collected_cases": 2447,
+      "semantic_errors_on_collected_cases": 46,
+      "accuracy_on_collected_cases": 0.981548335338949,
+      "correct_all_cases": 2447,
+      "accuracy_all_cases": 0.9788,
+      "prediction_coverage_on_collected_cases": 0.981548335338949
+    }
+  },
+  "usage": {
+    "calls": 7896,
+    "responses_with_usage": 7895,
+    "calls_with_latency": 7896,
+    "prompt_tokens": 5912804,
+    "completion_tokens": 472759,
+    "known_cost": "0.7803840",
+    "cost_complete": false,
+    "latency_median_ms": 1464.6306949980499,
+    "latency_p95_ms": 2666.444361995673,
+    "observed_models": [
+      "openai/gpt-4.1-nano"
+    ]
+  },
+  "private_cep_audit": {
+    "total": 2500,
+    "correct": 2500,
+    "missing": 0,
+    "integer": 0,
+    "leading_zero_lost": 0,
+    "scope": "Captura determinística privada sobre corpus original antes da redação"
+  },
+  "retry_archive": {
+    "archived_failure_fixtures": 0,
+    "archived_report": false,
+    "history_run": null
+  },
+  "usage_scope": "O novo relatório exclui tentativas de falha arquivadas",
+  "archived_failure_attempts_excluded": 0,
+  "mode": "record",
+  "requested_model": "openai/gpt-4.1-nano",
+  "technical_timeout_seconds": 30.0,
+  "corpus_cases": 2500,
+  "limited": false
+}

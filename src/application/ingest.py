@@ -6,7 +6,7 @@ import asyncio
 import re
 import unicodedata
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from types import TracebackType
 from typing import Protocol, Self
 
@@ -26,6 +26,7 @@ class IngestedTurn:
     conversation_id: str
     messages: tuple[InboundMessage, ...]
     objecoes_preco: int
+    private_cep: str | None = field(default=None, repr=False)
 
 
 def price_objection(text: str) -> bool:
@@ -56,6 +57,7 @@ class Ingestor:
         clock: Clock,
         sleep: Callable[[float], Awaitable[None]],
         window: float = 0.5,
+        capture_cep: Callable[[str], str | None] | None = None,
     ) -> None:
         if not 0 < window < float("inf"):
             raise ValueError("Janela deve ser finita e positiva")
@@ -67,6 +69,8 @@ class Ingestor:
         self._clock = clock
         self._sleep = sleep
         self._window = window
+        self._capture_cep = capture_cep
+        self._private: dict[str, dict[str, str]] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._pending: dict[str, list[InboundMessage]] = {}
         self._deadlines: dict[str, float] = {}
@@ -91,7 +95,12 @@ class Ingestor:
             raise RuntimeError("Ingestão encerrada")
         cpf_hash = self._privacy.cpf_hash(message.corpo)
         safe = replace(message, corpo=self._privacy.redact(message.corpo), media_ref=None)
-        acceptance = asyncio.create_task(self._accept(safe, cpf_hash))
+        cep = (
+            self._capture_cep(message.corpo)
+            if self._capture_cep and message.tipo == "text"
+            else None
+        )
+        acceptance = asyncio.create_task(self._accept(safe, cpf_hash, cep))
         cancelled = False
         while True:
             try:
@@ -106,7 +115,7 @@ class Ingestor:
             raise asyncio.CancelledError()
         return result
 
-    async def _accept(self, safe: InboundMessage, cpf_hash: str | None) -> bool:
+    async def _accept(self, safe: InboundMessage, cpf_hash: str | None, cep: str | None) -> bool:
         """Commit e enfileiramento completam juntos antes de cancelar o chamador."""
         key = safe.conversation_id
         lock = self._locks.setdefault(key, asyncio.Lock())
@@ -120,6 +129,8 @@ class Ingestor:
             # Identidade técnica chega ao consumidor, nunca o telefone do canal.
             safe = replace(safe, channel_user_id=conversation.lead_id)
             self._pending.setdefault(key, []).append(safe)
+            if cep is not None:
+                self._private.setdefault(key, {})[safe.provider_message_id] = cep
             self._deadlines[key] = self._clock.monotonic() + self._window
             worker = self._workers.get(key)
             if worker is None or worker.done():
@@ -147,7 +158,10 @@ class Ingestor:
                         if conversation is None:
                             raise RuntimeError("Conversa ausente na ingestão")
                         count = conversation.objecoes_preco
-                    self._ready[key] = IngestedTurn(key, messages, count)
+                    private = self._private.pop(key, {})
+                    cep = next((private[msg.provider_message_id] for msg in messages
+                                if msg.provider_message_id in private), None)
+                    self._ready[key] = IngestedTurn(key, messages, count, cep)
                     del self._pending[key]
             # Um worker por conversa serializa consumo sem bloquear novas entradas.
             await self._consume(self._ready[key])

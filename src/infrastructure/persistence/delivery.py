@@ -11,6 +11,7 @@ from threading import Lock
 from typing import Any, Literal
 from uuid import uuid4
 
+from application.outbox import HANDOFF_DESTINATIONS, HandoffEffect
 from application.tracing import QuoteAttempt
 from domain.handoff import (
     CollectedSlot,
@@ -19,7 +20,13 @@ from domain.handoff import (
     HandoffSnapshot,
     HandoffSuggestion,
 )
-from domain.messages import ApresentarCotacao, Intent, OutboundMessage, PedirDado
+from domain.messages import (
+    ApresentarCotacao,
+    Intent,
+    MensagemConversacional,
+    OutboundMessage,
+    PedirDado,
+)
 from domain.product import ProductFacts
 from domain.quote import Carencia, Declined, ProRata, Quote
 from infrastructure.persistence._worker import run_sqlite
@@ -34,6 +41,7 @@ _TYPES = {
         HandoffSnapshot,
         HandoffSuggestion,
         ApresentarCotacao,
+        MensagemConversacional,
         OutboundMessage,
         PedirDado,
         ProductFacts,
@@ -52,6 +60,7 @@ _TEXT_FIELDS = {
     Carencia: {"observacao", "coberturas"},
     Quote: {"plano_nome", "coberturas"},
     ProductFacts: {"nome", "coberturas"},
+    MensagemConversacional: {"texto"},
 }
 
 
@@ -143,8 +152,13 @@ class SQLiteDelivery:
         message: OutboundMessage,
         destino: Literal["lead", "webhook_vendas", "api_fila"],
         now: datetime,
+        *,
+        identifier: str | None = None,
     ) -> str:
-        identifier = uuid4().hex
+        stable = identifier is not None
+        identifier = identifier or uuid4().hex
+        if not identifier.strip():
+            raise ValueError("Entrega exige identificador")
         await run_sqlite(
             partial(
                 self._enqueue,
@@ -153,20 +167,103 @@ class SQLiteDelivery:
                 json.dumps(_pack(message)),
                 destino,
                 now.isoformat(),
+                stable,
             )
         )
         return identifier
 
     def _enqueue(
-        self, identifier: str, conversation_id: str, payload: str, destino: str, now: str
+        self,
+        identifier: str,
+        conversation_id: str,
+        payload: str,
+        destino: str,
+        now: str,
+        stable: bool,
     ) -> None:
         with self._lock, self._connection:
             self._connection.execute(
-                "INSERT INTO outbound_messages "
-                "(id, conversation_id, payload, destino, status, criado_em) "
-                "VALUES (?, ?, ?, ?, 'pendente', ?)",
-                (identifier, conversation_id, payload, destino, now),
+                ("INSERT OR IGNORE INTO " if stable else "INSERT INTO ")
+                + "outbound_messages "
+                "(id, conversation_id, payload, destino, status, criado_em, "
+                "proxima_tentativa_em) VALUES (?, ?, ?, ?, 'pendente', ?, ?)",
+                (identifier, conversation_id, payload, destino, now, now),
             )
+            if stable:
+                persisted = self._connection.execute(
+                    "SELECT conversation_id, payload, destino FROM outbound_messages WHERE id=?",
+                    (identifier,),
+                ).fetchone()
+                if persisted != (conversation_id, payload, destino):
+                    raise ValueError("Identificador já usado por outra entrega")
+
+    async def enqueue_handoff(
+        self,
+        conversation_id: str,
+        decision: HandoffDecision,
+        now: datetime,
+        *,
+        identifier: str,
+    ) -> str:
+        if not identifier.strip():
+            raise ValueError("Handoff exige identificador estável")
+        if not decision.escalar or decision.motivo is None or decision.snapshot is None:
+            raise ValueError("Handoff exige decisão de escalar com snapshot")
+        serialized = json.dumps(_pack(decision))
+        message = json.dumps(_pack(OutboundMessage(conversation_id, Intent.ESCALAR, decision)))
+        await run_sqlite(
+            partial(
+                self._enqueue_handoff,
+                identifier,
+                conversation_id,
+                decision,
+                serialized,
+                message,
+                now.isoformat(),
+            )
+        )
+        return identifier
+
+    def _enqueue_handoff(
+        self,
+        identifier: str,
+        conversation_id: str,
+        decision: HandoffDecision,
+        serialized: str,
+        message: str,
+        now: str,
+    ) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "INSERT OR IGNORE INTO handoffs VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    identifier,
+                    conversation_id,
+                    decision.motivo,
+                    bool(decision.sugestao_llm and decision.sugestao_llm.escalar),
+                    serialized,
+                    now,
+                ),
+            )
+            persisted = self._connection.execute(
+                "SELECT conversation_id, snapshot FROM handoffs WHERE id=?", (identifier,)
+            ).fetchone()
+            if persisted != (conversation_id, serialized):
+                raise ValueError("Identificador de handoff já usado por outra decisão")
+            for destino in HANDOFF_DESTINATIONS:
+                effect_id = f"{identifier}:{destino}"
+                self._connection.execute(
+                    "INSERT OR IGNORE INTO outbound_messages "
+                    "(id, conversation_id, payload, destino, status, criado_em, "
+                    "proxima_tentativa_em) VALUES (?, ?, ?, ?, 'pendente', ?, ?)",
+                    (effect_id, conversation_id, message, destino, now, now),
+                )
+                effect = self._connection.execute(
+                    "SELECT conversation_id, payload, destino FROM outbound_messages WHERE id=?",
+                    (effect_id,),
+                ).fetchone()
+                if effect != (conversation_id, message, destino):
+                    raise ValueError("Identificador de efeito já usado por outra entrega")
 
     async def outbound(self, identifier: str) -> OutboundMessage | None:
         serialized = await run_sqlite(
@@ -222,6 +319,75 @@ class SQLiteDelivery:
         if not isinstance(result, HandoffDecision):
             raise ValueError("Decisão persistida inválida")
         return result
+
+    async def due_handoffs(
+        self, now: datetime, *, limit: int = 100
+    ) -> tuple[HandoffEffect, ...]:
+        rows = await run_sqlite(partial(self._due_handoffs, now.isoformat(), limit))
+        effects: list[HandoffEffect] = []
+        for identifier, conversation_id, payload, destino, tentativas in rows:
+            message = _unpack(json.loads(payload))
+            if (
+                not isinstance(message, OutboundMessage)
+                or message.intent is not Intent.ESCALAR
+                or not isinstance(message.payload, HandoffDecision)
+            ):
+                raise ValueError("Efeito de handoff persistido inválido")
+            effects.append(
+                HandoffEffect(
+                    str(identifier),
+                    str(conversation_id),
+                    destino,
+                    message.payload,
+                    int(tentativas),
+                )
+            )
+        return tuple(effects)
+
+    def _due_handoffs(self, now: str, limit: int) -> list[sqlite3.Row | tuple[Any, ...]]:
+        with self._lock:
+            return self._connection.execute(
+                "SELECT o.id, o.conversation_id, o.payload, o.destino, o.tentativas "
+                "FROM outbound_messages AS o JOIN handoffs AS h "
+                "ON o.id = h.id || ':' || o.destino "
+                "WHERE o.status IN ('pendente', 'falhou') "
+                "AND COALESCE(o.proxima_tentativa_em, o.criado_em) <= ? "
+                "ORDER BY CASE o.destino WHEN 'lead' THEN 0 WHEN 'webhook_vendas' THEN 1 "
+                "ELSE 2 END, o.criado_em, o.rowid LIMIT ?",
+                (now, limit),
+            ).fetchall()
+
+    async def mark_handoff_delivered(self, identifier: str, now: datetime) -> None:
+        await run_sqlite(partial(self._mark_delivered, identifier, now.isoformat()))
+
+    def _mark_delivered(self, identifier: str, now: str) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE outbound_messages SET status='entregue', tentativas=tentativas+1, "
+                "erro=NULL, proxima_tentativa_em=NULL, entregue_em=? "
+                "WHERE id=? AND status!='entregue'",
+                (now, identifier),
+            )
+
+    async def mark_handoff_failed(
+        self,
+        identifier: str,
+        *,
+        error: str,
+        next_attempt_at: datetime,
+    ) -> None:
+        await run_sqlite(
+            partial(self._mark_failed, identifier, error, next_attempt_at.isoformat())
+        )
+
+    def _mark_failed(self, identifier: str, error: str, next_attempt_at: str) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE outbound_messages SET status='falhou', tentativas=tentativas+1, "
+                "erro=?, proxima_tentativa_em=?, entregue_em=NULL "
+                "WHERE id=? AND status!='entregue'",
+                (error, next_attempt_at, identifier),
+            )
 
     def _read(self, table: str, column: str, identifier: str) -> str | None:
         with self._lock:

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent.prompts.converser import CONVERSER_PROMPT
+from agent.templates import render_safe_reply
 from application.llm import LLMClient, LLMContractError, LLMRequest, LLMRole, LLMTool
 from domain.handoff import HandoffReason
 from domain.product import ProductFacts
@@ -36,6 +37,8 @@ class ConversationResult:
     texto: str
     escalacao: HandoffReason | None
     plano_id: str | None = None
+    # Fala do modelo descartada pelo guardrail, já redigida; o grafo registra no trace.
+    violacao: str | None = None
 
 
 def project_quote(
@@ -51,21 +54,28 @@ def project_quote(
     }
 
 
-_NUMBERS = re.compile(
-    r"\d|R\$|\b(?:reais|real|centavos?|mil|milhão|milhões|cem|cento|duzentos|trezentos|"
-    r"quatrocentos|quinhentos|seiscentos|setecentos|oitocentos|novecentos|dez|vinte|trinta|"
-    r"quarenta|cinquenta|sessenta|setenta|oitenta|noventa)\b",
+_CARDINAL = (
+    r"(?:dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|"
+    r"vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|cento|duzentos|"
+    r"trezentos|quatrocentos|quinhentos|seiscentos|setecentos|oitocentos|novecentos|"
+    r"mil|milh[aã]o|milh[oõ]es)"
+)
+_AMOUNT = rf"(?:\d[\d.,]*|{_CARDINAL})"
+# Rede de proteção, não garantia: o modelo nunca recebe base_mensal nem multiplicadores.
+# Mira valor monetário; dígito solto (carência de 30 dias, assistência 24h) passa.
+_MONEY = re.compile(
+    r"R\$"
+    rf"|\b{_AMOUNT}\s+(?:reais|real|centavos?)\b"
+    r"|\b\d{1,3}(?:\.\d{3})*,\d{2}\b"
+    r"|\b(?:cust\w*|pag\w*|mensalidade|pr[eê]mio|franquia|pre[çc]o|valor|parcela\w*"
+    rf"|sai\s+por|fica\s+por)\s+(?:\w+\s+){{0,2}}{_AMOUNT}\b"
+    rf"|\b{_AMOUNT}\s+(?:por\s+m[eê]s|mensais|ao\s+m[eê]s)\b",
     re.IGNORECASE,
 )
-# Financial prose belongs to templates even when it contains no digits or currency.
-_FINANCIAL = re.compile(
-    r"R\$|\b(?:pr[eê]mio\w*|franquia\w*|pre[çc]o\w*|valor\w*|reais|real|"
-    r"cust\w*|pag\w*|parcel\w*|gratuit\w*|mensal\w*|mensais|"
-    r"cobran[çc]\w*|cobrar\w*|descont\w*)\b|"
-    r"\bpor\s+m[eê]s\b|\b(?:sai|sair|fica|ficar)\s+por\b",
-    re.IGNORECASE,
-)
-_DECIMAL_AMOUNT = re.compile(r"\d+[.,]\d+")
+
+
+def contains_money(text: str) -> bool:
+    return _MONEY.search(text) is not None
 
 
 class Converser:
@@ -76,11 +86,8 @@ class Converser:
     async def converse(
         self, context: ConversationInput, *, budget: float = 3.0
     ) -> ConversationResult:
-        history = [
-            self._privacy.redact(text)
-            for text in context.historico
-            if not _FINANCIAL.search(text) and not _DECIMAL_AMOUNT.search(text)
-        ]
+        # Filtro direcional: a fala do lead chega inteira, só redigida; a saída é filtrada.
+        history = [self._privacy.redact(text) for text in context.historico]
         products = [
             {
                 "plano_id": item.plano_id,
@@ -96,12 +103,13 @@ class Converser:
             if set(context.resultado) != allowed:
                 raise LLMContractError()
             projection = context.resultado
+        plans = [item.plano_id for item in context.produtos]
         tool = LLMTool(
             "cotar",
             "Solicita cotação do plano selecionado",
             {
                 "type": "object",
-                "properties": {"plano_id": {"type": "string"}},
+                "properties": {"plano_id": {"type": "string", "enum": plans}},
                 "required": ["plano_id"],
                 "additionalProperties": False,
             },
@@ -124,11 +132,12 @@ class Converser:
                 raise LLMContractError()
             call = response.tool_calls[0]
             plan = call.arguments.get("plano_id")
+            # Plano fora do catálogo é erro do modelo, nunca pedido de cotação.
             if (
                 call.name != "cotar"
                 or set(call.arguments) != {"plano_id"}
                 or not isinstance(plan, str)
-                or not plan
+                or plan not in plans
             ):
                 raise LLMContractError()
             return ConversationResult("", None, plan)
@@ -136,6 +145,9 @@ class Converser:
             parsed = ConversationOutput.model_validate_json(response.content)
         except ValidationError:
             raise LLMContractError() from None
-        if _NUMBERS.search(parsed.texto) or _FINANCIAL.search(parsed.texto):
-            raise LLMContractError()
-        return ConversationResult(self._privacy.redact(parsed.texto), parsed.escalacao)
+        text = self._privacy.redact(parsed.texto)
+        if contains_money(text):
+            return ConversationResult(
+                render_safe_reply(context.produtos), parsed.escalacao, violacao=text
+            )
+        return ConversationResult(text, parsed.escalacao)

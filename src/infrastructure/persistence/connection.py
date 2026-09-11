@@ -36,6 +36,19 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             connection.execute("DROP TABLE quote_attempts")
             connection.execute("ALTER TABLE quote_attempts_migration RENAME TO quote_attempts")
             connection.execute("CREATE INDEX idx_attempts_trace ON quote_attempts(trace_id)")
+        outbound_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(outbound_messages)")
+        }
+        if "erro" not in outbound_columns:
+            connection.execute("ALTER TABLE outbound_messages ADD COLUMN erro TEXT")
+        if "proxima_tentativa_em" not in outbound_columns:
+            connection.execute(
+                "ALTER TABLE outbound_messages ADD COLUMN proxima_tentativa_em TEXT"
+            )
+            connection.execute(
+                "UPDATE outbound_messages SET proxima_tentativa_em=criado_em "
+                "WHERE status IN ('pendente', 'falhou')"
+            )
         connection.commit()
     except Exception:
         connection.rollback()

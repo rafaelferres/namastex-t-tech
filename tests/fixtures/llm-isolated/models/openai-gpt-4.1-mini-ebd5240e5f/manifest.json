@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "harness": "isolated-extraction",
+  "model": "openai/gpt-4.1-mini",
+  "technical_timeout_seconds": 30.0,
+  "corpus_case_count": 2500,
+  "private_cep_audit": {
+    "total": 2500,
+    "correct": 2500,
+    "missing": 0,
+    "integer": 0,
+    "leading_zero_lost": 0,
+    "scope": "Captura determinística privada sobre corpus original antes da redação"
+  }
+}

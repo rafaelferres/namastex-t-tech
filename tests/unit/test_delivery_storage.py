@@ -18,7 +18,13 @@ from domain.handoff import (
     HandoffSnapshot,
     HandoffSuggestion,
 )
-from domain.messages import ApresentarCotacao, Intent, OutboundMessage, PedirDado
+from domain.messages import (
+    ApresentarCotacao,
+    Intent,
+    MensagemConversacional,
+    OutboundMessage,
+    PedirDado,
+)
 from domain.product import ProductFacts
 from domain.quote import Declined, Quote
 from infrastructure.persistence.connection import connect
@@ -71,6 +77,11 @@ async def test_durable_intents_money_and_handoff(quote_payload: dict[str, Any]) 
             OutboundMessage("conv-a", Intent.PEDIR_DADO, PedirDado("idade")),
             OutboundMessage("conv-a", Intent.RECUSAR, Declined("idade")),
             OutboundMessage("conv-a", Intent.ESCALAR, decision),
+            OutboundMessage(
+                "conv-a",
+                Intent.CONVERSAR,
+                MensagemConversacional("Como posso ajudar?"),
+            ),
         )
         for output in outputs:
             identifier = await store.enqueue(output, "lead", now)
@@ -93,6 +104,18 @@ async def test_durable_intents_money_and_handoff(quote_payload: dict[str, Any]) 
         assert "01310100" not in "\n".join(conn.iterdump())
         assert conn.execute("SELECT sugerido_por_llm FROM handoffs").fetchone()[0] == 1
         assert decision.divergencia
+        conversational_id = await store.enqueue(
+            OutboundMessage(
+                "conv-a",
+                Intent.CONVERSAR,
+                MensagemConversacional("Escreva para pessoa@example.com"),
+            ),
+            "lead",
+            now,
+        )
+        conversational = await store.outbound(conversational_id)
+        assert conversational is not None
+        assert conversational.payload == MensagemConversacional("Escreva para [EMAIL]")
         assert await store.handoff("missing") is None
         assert await store.outbound("missing") is None
         with pytest.raises(ValueError):
@@ -223,5 +246,33 @@ async def test_unsupported_attempt_is_rejected_before_writing(outbox: bool) -> N
                 await store.record_handoff("conv-a", decision, now)
         assert conn.execute("SELECT count(*) FROM handoffs").fetchone()[0] == 0
         assert conn.execute("SELECT count(*) FROM outbound_messages").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.asyncio
+async def test_enqueue_accepts_stable_identifier_without_duplicating_message() -> None:
+    from infrastructure.persistence.delivery import SQLiteDelivery
+
+    conn = connect(":memory:")
+    try:
+        now = datetime(2026, 9, 11, tzinfo=UTC)
+        await SQLiteConversations(conn).ensure(message(), None, now)
+        store = SQLiteDelivery(conn)
+        output = OutboundMessage("conv-a", Intent.PEDIR_DADO, PedirDado("idade"))
+
+        first = await store.enqueue(output, "lead", now, identifier="turn-1:reply")
+        second = await store.enqueue(output, "lead", now, identifier="turn-1:reply")
+
+        assert first == second == "turn-1:reply"
+        assert conn.execute("SELECT count(*) FROM outbound_messages").fetchone()[0] == 1
+        with pytest.raises(ValueError, match="outra entrega"):
+            await store.enqueue(
+                OutboundMessage("conv-a", Intent.PEDIR_DADO, PedirDado("cep")),
+                "lead",
+                now,
+                identifier="turn-1:reply",
+            )
+        assert await store.outbound("turn-1:reply") == output
     finally:
         conn.close()

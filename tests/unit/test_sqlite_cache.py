@@ -32,6 +32,7 @@ def test_connection_and_idempotent_schema(tmp_path: Path, memory: bool) -> None:
             ("messages",),
             ("handoffs",),
             ("outbound_messages",),
+            ("turn_events",),
             ("quote_cache",),
             ("quote_attempts",),
         ]

@@ -1,0 +1,70 @@
+{
+  "total_cases": 2500,
+  "collection": {
+    "successful_cases": 2499,
+    "failed_cases": 1,
+    "coverage": 0.9996,
+    "failures_by_kind": {
+      "unavailable": 1
+    },
+    "failed_case_ids": [
+      "conv_01863"
+    ]
+  },
+  "slots": {
+    "idade": {
+      "collected_cases": 2499,
+      "predicted_on_collected_cases": 2499,
+      "correct_on_collected_cases": 2499,
+      "semantic_errors_on_collected_cases": 0,
+      "accuracy_on_collected_cases": 1.0,
+      "correct_all_cases": 2499,
+      "accuracy_all_cases": 0.9996,
+      "prediction_coverage_on_collected_cases": 1.0
+    },
+    "veiculo_ano": {
+      "collected_cases": 2499,
+      "predicted_on_collected_cases": 2499,
+      "correct_on_collected_cases": 2499,
+      "semantic_errors_on_collected_cases": 0,
+      "accuracy_on_collected_cases": 1.0,
+      "correct_all_cases": 2500,
+      "accuracy_all_cases": 1.0,
+      "prediction_coverage_on_collected_cases": 1.0
+    }
+  },
+  "usage": {
+    "calls": 7500,
+    "responses_with_usage": 7499,
+    "calls_with_latency": 7500,
+    "prompt_tokens": 5597673,
+    "completion_tokens": 390839,
+    "known_cost": "2.8644116",
+    "cost_complete": false,
+    "latency_median_ms": 1482.0647854976414,
+    "latency_p95_ms": 2267.146337995655,
+    "observed_models": [
+      "openai/gpt-4.1-mini"
+    ]
+  },
+  "private_cep_audit": {
+    "total": 2500,
+    "correct": 2500,
+    "missing": 0,
+    "integer": 0,
+    "leading_zero_lost": 0,
+    "scope": "Captura determinística privada sobre corpus original antes da redação"
+  },
+  "retry_archive": {
+    "archived_failure_fixtures": 0,
+    "archived_report": false,
+    "history_run": null
+  },
+  "usage_scope": "O novo relatório exclui tentativas de falha arquivadas",
+  "archived_failure_attempts_excluded": 0,
+  "mode": "record",
+  "requested_model": "openai/gpt-4.1-mini",
+  "technical_timeout_seconds": 30.0,
+  "corpus_cases": 2500,
+  "limited": false
+}

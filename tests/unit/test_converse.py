@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from unittest.mock import AsyncMock
 
 import pytest
 
-from agent.nodes.converse import ConversationInput, Converser, project_quote
+from agent.nodes.converse import ConversationInput, Converser, contains_money, project_quote
+from agent.templates import format_brl, render_safe_reply
 from application.llm import LLMContractError, LLMResponse, LLMToolCall
 from domain.handoff import HandoffReason
-from domain.product import ProductFacts
 from domain.quote import Declined, Quote, QuoteUnavailable
+from infrastructure.planos.projections import project_planos
+from tests.fakes import CANONICAL_OBJECTIONS
 
-FACTS = ProductFacts("basico", "Básico", ("roubo", "furto"), True)
+
+@pytest.fixture
+def products(plans_payload):
+    return project_planos(plans_payload).product_facts
 
 
 def client(content='{"texto":"Posso ajudar.","escalacao":null}', calls=()):
@@ -20,124 +26,133 @@ def client(content='{"texto":"Posso ajudar.","escalacao":null}', calls=()):
     )
 
 
-@pytest.mark.asyncio
-async def test_tool_has_only_plan_and_no_pricing_in_context(quote_payload):
-    leaf = client("", (LLMToolCall("cotar", {"plano_id": "basico"}),))
-    node = Converser(leaf)
-    result = await node.converse(
-        ConversationInput(
-            "conv",
-            "Vendedor cordial",
-            ("O prêmio era R$ 313,80 e a franquia R$ 1.000,00.",),
-            (FACTS,),
-            None,
-        )
+def speech(text, escalacao=None):
+    return client(json.dumps({"texto": text, "escalacao": escalacao}))
+
+
+async def converse(leaf, products, historico=(), resultado=None):
+    return await Converser(leaf).converse(
+        ConversationInput("c", "Vendedor cordial", tuple(historico), products, resultado)
     )
-    assert result.plano_id == "basico"
-    request = leaf.complete.call_args.args[0]
-    assert set(request.tools[0].parameters["properties"]) == {"plano_id"}
-    context = request.system + request.user
-    for forbidden in (
-        "313",
-        "1.000",
-        "premio",
-        "prêmio",
-        "franquia",
-        "base_mensal",
-        "multiplicador",
-    ):
-        assert forbidden not in context.lower()
-    projection = project_quote(Quote.from_api(quote_payload), FACTS)
-    assert set(projection) == {"status", "nome_plano", "coberturas", "carencia"}
-    assert projection["status"] == "cotado"
+
+
+@pytest.mark.asyncio
+async def test_tool_schema_is_closed_enum_of_catalog_plans(products):
+    leaf = client("", (LLMToolCall("cotar", {"plano_id": "premium"}),))
+    result = await converse(leaf, products)
+    assert result.plano_id == "premium"
+    parameters = leaf.complete.call_args.args[0].tools[0].parameters
+    assert set(parameters["properties"]) == {"plano_id"}
+    assert parameters["properties"]["plano_id"]["enum"] == ["essencial", "completo", "premium"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("plan", ["platinum", "Premium", "premium ", "", 3])
+async def test_plan_outside_catalog_is_contract_error(products, plan):
+    with pytest.raises(LLMContractError):
+        await converse(client("", (LLMToolCall("cotar", {"plano_id": plan}),)), products)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "call",
     [
-        LLMToolCall("cotar", {"plano_id": "basico", "cep": "01310100"}),
-        LLMToolCall("outra", {"plano_id": "basico"}),
+        LLMToolCall("cotar", {"plano_id": "premium", "cep": "01310100"}),
+        LLMToolCall("outra", {"plano_id": "premium"}),
     ],
 )
-async def test_tool_rejects_extra_arguments_and_unknown_names(call):
+async def test_tool_rejects_extra_arguments_and_unknown_names(products, call):
     with pytest.raises(LLMContractError):
-        await Converser(client("", (call,))).converse(ConversationInput("c", "", (), (FACTS,)))
+        await converse(client("", (call,)), products)
 
 
 @pytest.mark.asyncio
-async def test_suggestion_is_enum_and_invalid_prose_rejected():
-    result = await Converser(
-        client(json.dumps({"texto": "Entendi.", "escalacao": "pedido_de_humano"}))
-    ).converse(ConversationInput("c", "", (), (FACTS,)))
+async def test_context_carries_projection_never_pricing(products, plans_payload, quote_payload):
+    quote = Quote.from_api(quote_payload)
+    facts = next(item for item in products if item.plano_id == quote.plano_id)
+    leaf = client()
+    await converse(leaf, products, ("Quero cotar",), project_quote(quote, facts))
+    request = leaf.complete.call_args.args[0]
+    context = (request.system + request.user).lower()
+    amounts = [quote.premio_mensal, quote.franquia]
+    amounts += [Decimal(str(plan["base_mensal"])) for plan in plans_payload["planos"]]
+    for amount in amounts:
+        assert str(amount) not in context
+        assert format_brl(amount).lower() not in context
+    for forbidden in ("base_mensal", "multiplicador", "premio_mensal", "franquia"):
+        assert forbidden not in context
+
+
+@pytest.mark.asyncio
+async def test_lead_speech_reaches_converser_intact_after_pii_redaction(products):
+    history = (*CANONICAL_OBJECTIONS, "consigo por 180 na concorrente", "meu cpf é 529.982.247-25")
+    leaf = client()
+    await converse(leaf, products, history)
+    sent = json.loads(leaf.complete.call_args.args[0].user)["historico"]
+    assert sent == [*CANONICAL_OBJECTIONS, "consigo por 180 na concorrente", "meu cpf é [CPF]"]
+
+
+@pytest.mark.asyncio
+async def test_suggestion_is_enum_and_invalid_schema_is_contract_error(products):
+    result = await converse(speech("Entendi.", "pedido_de_humano"), products)
     assert result.escalacao is HandoffReason.HUMANO
     with pytest.raises(LLMContractError):
-        await Converser(client('{"texto":"Olá","escalacao":"vou chamar alguém"}')).converse(
-            ConversationInput("c", "", (), (FACTS,))
-        )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "text", ["Custa R$ 300,00", "Custa trezentos reais", "Pode pagar dez por mês"]
-)
-async def test_free_speech_cannot_publish_numbers(text):
-    with pytest.raises(LLMContractError):
-        await Converser(client(json.dumps({"texto": text, "escalacao": None}))).converse(
-            ConversationInput("c", "", (), (FACTS,))
-        )
-
-
-def test_decline_and_unavailable_keep_distinct_projection():
-    assert project_quote(Declined("idade fora"), FACTS)["status"] == "recusado"
-    assert project_quote(QuoteUnavailable(), FACTS)["status"] == "indisponivel"
+        await converse(client('{"texto":"Olá","escalacao":"vou chamar alguém"}'), products)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "text",
     [
-        "Custa onze por mês.",
-        "Você paga doze.",
-        "Sai por quinze.",
-        "O pagamento será gratuito.",
-        "Pode parcelar em duas vezes.",
-        "Fica por dezoito mensais.",
-        "O custo é baixo.",
+        "Carência de 30 dias para roubo e furto.",
+        "O Premium inclui assistência 24h e carro reserva.",
+        "São 7 coberturas no Premium, contra 3 no Essencial.",
+        "A vigência pode começar em 01/10/2026.",
+        "Entendo, a franquia pesou. Posso mostrar outro plano.",
     ],
 )
-async def test_financial_assertions_are_rejected_without_currency_or_digits(text):
-    with pytest.raises(LLMContractError):
-        await Converser(client(json.dumps({"texto": text, "escalacao": None}))).converse(
-            ConversationInput("c", "", (), (FACTS,))
-        )
+async def test_non_monetary_numbers_and_objection_replies_pass(products, text):
+    result = await converse(speech(text), products)
+    assert result.texto == text
+    assert result.violacao is None
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "financial_history",
-    ["Fica 313,80 por mês.", "313.80", "Custa onze.", "Pode pagar doze."],
+    "text",
+    [
+        "Fica R$ 313,80 por mês.",
+        "Custa trezentos reais.",
+        "Sai por 313,80.",
+        "Pode pagar dez por mês.",
+        "Custa onze por mês.",
+        "Você paga doze.",
+        "Sai por quinze.",
+        "Fica por dezoito mensais.",
+        "A franquia é de 1.000.",
+    ],
 )
-async def test_history_cannot_forward_amounts_without_currency_labels(financial_history):
-    leaf = client()
-    await Converser(leaf).converse(
-        ConversationInput("c", "", (financial_history, "Quero cobertura para roubo."), (FACTS,))
-    )
-    context = json.loads(leaf.complete.call_args.args[0].user)
-    assert context["historico"] == ["Quero cobertura para roubo."]
+async def test_monetary_speech_falls_back_to_template_and_is_reported(products, text):
+    result = await converse(speech(text), products)
+    assert result.texto == render_safe_reply(products)
+    assert result.violacao == text
+    assert not contains_money(result.texto)
+
+
+def test_decline_and_unavailable_keep_distinct_projection(products):
+    facts = products[0]
+    assert project_quote(Declined("idade fora"), facts)["status"] == "recusado"
+    assert project_quote(QuoteUnavailable(), facts)["status"] == "indisponivel"
 
 
 @pytest.mark.asyncio
-async def test_new_turn_can_request_other_plan_after_previous_quote():
+async def test_new_turn_can_request_other_plan_after_previous_quote(products):
     leaf = client("", (LLMToolCall("cotar", {"plano_id": "premium"}),))
-    result = await Converser(leaf).converse(
-        ConversationInput(
-            "c",
-            "",
-            ("Quero o premium agora.",),
-            (FACTS,),
-            {"status": "cotado", "nome_plano": "Básico", "coberturas": ["roubo"], "carencia": True},
-        )
+    result = await converse(
+        leaf,
+        products,
+        ("Quero o premium agora.",),
+        {"status": "cotado", "nome_plano": "Completo", "coberturas": ["roubo"], "carencia": True},
     )
     assert result.plano_id == "premium"
     assert leaf.complete.call_args.args[0].tools[0].name == "cotar"

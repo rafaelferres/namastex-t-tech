@@ -25,6 +25,7 @@ from infrastructure.llm.config import LLMConfig
 from infrastructure.llm.http import OpenRouterLLMClient
 from infrastructure.persistence.attempts import SQLiteAttempts
 from infrastructure.persistence.conversations import SQLiteConversations
+from infrastructure.persistence.turns import SQLiteTurnEvents
 from infrastructure.privacy import PrivacyRedactor, install_redacting_logging
 from infrastructure.quote.cache import CachingQuoteProvider
 from infrastructure.quote.config import QuoteConfig
@@ -89,7 +90,12 @@ def trace_inspector(path: Path) -> Iterator[InspectQuoteTrace]:
         path.resolve().as_uri() + "?mode=ro", uri=True, check_same_thread=False
     )
     try:
-        yield InspectQuoteTrace(SQLiteAttempts(connection))
+        has_turns = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='turn_events'"
+        ).fetchone()
+        yield InspectQuoteTrace(
+            SQLiteAttempts(connection), SQLiteTurnEvents(connection) if has_turns else None
+        )
     finally:
         connection.close()
 
@@ -101,9 +107,14 @@ def build_llm_client(*, client: httpx.AsyncClient, config: LLMConfig, clock: Clo
 
 
 def build_slot_extractor(
-    *, client: httpx.AsyncClient, config: LLMConfig, clock: Clock, privacy: PrivacyRedactor,
+    *,
+    client: httpx.AsyncClient,
+    config: LLMConfig,
+    clock: Clock,
+    privacy: PrivacyRedactor,
 ) -> SlotExtractor:
     return SlotExtractor(
-        build_llm_client(client=client, config=config, clock=clock), privacy,
+        build_llm_client(client=client, config=config, clock=clock),
+        privacy,
         default_budget=config.budget_seconds,
     )
