@@ -17,3 +17,8 @@ wheels/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Credenciais locais
+.env
+.env.*
+!.env.example

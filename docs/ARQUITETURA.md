@@ -3,10 +3,11 @@
 Documento técnico do sistema. Para as decisões e seus fundamentos, ver o
 `README.md`. Para as regras que governam alterações de código, ver `AGENTS.md`.
 
-Estado após a Tarefa 7: cotação, apresentação, política, envelopes, ingestão,
-privacidade, sete tabelas SQLite e replay estão implementados. Harness offline
-recebe um extrator intercambiável. Grafo, LLM, resolução de mídia, entrega da
-outbox, webhook e console permanecem desenho das próximas fases.
+Estado da Tarefa 8: núcleo determinístico, ingestão e SQLite implementados.
+Cliente OpenRouter, extrator estruturado e harness com gravação/reprodução estão
+implementados e avaliados em 2.500 conversas reais do corpus. Capturas redigidas
+permitem replay offline; limiares medidos protegem contra regressão. Grafo, conversador, resolução de mídia, entrega da outbox,
+webhook e console permanecem desenho das próximas fases.
 
 ---
 
@@ -143,6 +144,45 @@ todo componente que os usa. Sem isso, testar backoff custa segundos reais e test
 cache exige mexer no relógio da máquina.
 
 ---
+
+### 4.1. Cliente de linguagem
+
+`application.llm.LLMClient` é a porta assíncrona. `LLMConfig` configura modelos
+separados por papel, timeout de 2 s, orçamento de 2,5 s e limite de 4.000 tokens
+por conversa. A medição real registrou mediana de 1,58 s e p95 de 2,35 s;
+11,52% das conversas foram interrompidas por indisponibilidade/prazo.
+Esses limites ainda precisam de calibração antes de produção.
+`OpenRouterLLMClient` envia JSON Schema estrito e exige suporte do provedor.
+Erros não transportam corpo HTTP nem credenciais. `BudgetedLLMClient` compartilha
+contagem entre papéis e limita também a espera pelo lock; estouro de tokens gera
+sinal determinístico consumido pela regra `OrcamentoTokensEsgotado`.
+O contador é em memória por instância; persistência entre processos fica para a
+orquestração. O wiring deve compartilhar a instância entre os papéis.
+
+### 4.2. Extrator e avaliação
+
+`SlotExtractor` recebe apenas mensagem atual e `Slots`. O prompt é provisório.
+Cada slot é ausente (`None`), informado ou incerto, com proveniência. CEP exige
+string e recupera sete dígitos; ano futuro permanece literal. Data informada é
+ISO válida. Atualização incerta sem candidato não apaga valor já coletado. Áudio transcrito produz informação incerta até confirmação.
+
+CEP explícito é capturado antes da redação, mantido privado e excluído do request
+LLM. Estado já coletado não perde CEP. Em falha, as exceções de extração carregam
+`.slots` preservados, sem expô-los na mensagem ou repr; o consumidor deve guardá-los.
+A integração dessa captura com o estado do futuro grafo ainda será necessária:
+texto já redigido pela ingestão não permite recuperar o CEP original.
+
+`RecordedLLMClient` grava resposta redigida, uso e latência, sem gravar prompt ou
+chave. A chave da fixture inclui conversa, posição, modelo, schema, contexto e
+configuração. Reprodução é padrão e nunca recorre à rede se faltar captura.
+O harness processa rajadas em ordem, sem gabarito no contexto, e para ao obter
+idade e ano informados. A auditoria privada de CEP é separada da acurácia LLM.
+Avaliação completa é `slow` e `eval`, com 7.298 capturas reais. Idade: 88,48%;
+ano: 93,88%; pisos de regressão: 88% e 93%. Esses pisos não são SLOs de produção.
+Das 2.500 conversas, 288 foram interrompidas; nas 2.212 concluídas, ambos os slots
+estão corretos. Falhas também têm latência capturada; cancelamento externo não
+é transformado em indisponibilidade artificial. Custo sem uso retornado é
+desconhecido e estimado separadamente. Nenhuma chave é necessária para replay.
 
 ## 5. Estado da conversa
 

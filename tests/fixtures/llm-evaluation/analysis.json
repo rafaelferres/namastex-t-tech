@@ -1,0 +1,27 @@
+{
+  "source": "offline_analysis_of_real_recording",
+  "format_totals": {
+    "marca_modelo_ano": 808,
+    "modelo_ano": 861,
+    "e_um_modelo": 831
+  },
+  "format_failures": {
+    "modelo_ano": 87,
+    "marca_modelo_ano": 99,
+    "e_um_modelo": 102
+  },
+  "format_failure_rates": {
+    "marca_modelo_ano": 0.12252475247524752,
+    "modelo_ano": 0.10104529616724739,
+    "e_um_modelo": 0.12274368231046931
+  },
+  "incomplete_or_wrong_case_causes": {
+    "provider_error": 288
+  },
+  "completed_without_provider_or_token_error": 2212,
+  "age_correct_among_completed": 2212,
+  "year_correct_among_completed": 2212,
+  "semantic_error_conversations": [],
+  "estimated_total_cost_usd": "2.777447",
+  "cost_estimation_method": "Mean cost of responses with usage applied to every call; unknown failure charges are estimated, not observed."
+}

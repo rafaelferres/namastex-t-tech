@@ -390,3 +390,93 @@ slow permanecem separados (oito estatísticos, corpus e auditoria CPF).
 **Consequência:** ganho local modesto, sem retirar cobertura ou desabilitar
 assertions. O tempo continua dominado pelo workspace montado; não prometemos
 que a mudança transforma este ambiente em um loop de dois segundos.
+
+
+## D-024 — Workspace Linux e avaliação real como portão pendente
+**Data:** 2026-09-11
+**Contexto:** pequenas operações em /mnt/c dominavam a coleta do pytest.
+**Alternativas:** otimizar testes; manter montagem; migrar workspace.
+**Decisão:** cópia ativa em /home/rafael/namastex-test-tecnico, preservando a
+original como backup. Os mesmos 381 testes passaram em 1,61 s, contra 7,79 s.
+Cliente e extrator usam duplos no loop rápido; o portão eval exige capturas reais.
+**Consequência:** credencial OpenRouter ausente impede obter acurácia, custo e
+limiares. Nenhuma resposta sintética será publicada como avaliação medida.
+
+## D-025 — CEP privado e slots incertos fora da inferência monetária
+**Data:** 2026-09-11
+**Contexto:** a extração precisa conservar CEP, mas PII não pode entrar no LLM.
+**Alternativas:** enviar CEP redigido e perder o slot; enviar PII ao modelo;
+capturar CEP determinísticamente antes da redação.
+**Decisão:** captura privada de CEP explícito, imutável após coletado; schema
+rejeita inteiro e recupera sete dígitos. Prompt recebe só mensagem redigida e
+slots públicos. Incerto é estado explícito, separado de ausência. Ano futuro não
+é corrigido. Em falha, exceção de extração preserva slots para o consumidor.
+**Consequência:** captura precisa ser conectada à fronteira de ingestão no futuro
+grafo; não se tenta reconstruir CEP de texto já redigido. Auditoria de CEP mede
+captura privada, não acurácia do modelo. Prompt de extração permanece provisório.
+
+## D-026 — Capturas por chamada e limite de tokens compartilhado
+**Data:** 2026-09-11
+**Contexto:** repetição do golden set não pode gastar tokens nem mudar respostas.
+**Alternativas:** cache só por prompt; capturas por posição e configuração;
+consultar modelo em todo teste.
+**Decisão:** capturas imutáveis por conversa/posição/modelo/schema/contexto/config;
+replay não tem fallback. Uso e custo retornados pelo provedor são preservados,
+custo ausente fica desconhecido. Orçamento cobre lock e chamada; 4.000 tokens por
+conversa é limite inicial compartilhado entre papéis. Exceder dispara regra
+independente de sugestão do LLM. Timeout 2 s e orçamento 2,5 s reservam tempo para
+cotação dentro do turno. Candidato do extrator: openai/gpt-4.1-mini; conversador
+configurado separadamente como openai/gpt-4.1, ainda sem implementação.
+**Consequência:** modelo, latência e limite precisam ser validados na execução
+real. Contadores são locais à instância, não duráveis. Capturas incluem somente
+resposta redigida e metadados, nunca chave ou prompt em claro.
+**Referências:** [Structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs),
+[usage accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting).
+
+
+## D-027 — Captura de timeout sem confundir cancelamento externo
+**Data:** 2026-09-11
+**Contexto:** o piloto real respondeu corretamente os oito casos, mas seu p95 de
+2,41 s ficou próximo do orçamento de 2,5 s. Teste determinístico demonstrou que
+o timeout externo cancelava o gravador antes de persistir a falha, impedindo replay.
+**Alternativas:** aumentar orçamento para mascarar o caso; gravar todo cancelamento
+como falha; compartilhar a identificação do deadline que expirou.
+**Decisão:** o budget publica seu deadline no contexto da chamada. O gravador
+converte apenas cancelamento por esse deadline em indisponibilidade gravada.
+Cancelamento externo continua interrupção e não cria uma falha artificial.
+Falhas carregam latência medida pelo Clock, preservada na reprodução e incluída
+no p95. Corpo de erro e credencial continuam fora da exceção e da captura.
+**Consequência:** métricas incluem as chamadas lentas interrompidas, sem viés de
+medir apenas sucesso. Cobrança sem resposta permanece desconhecida; eventual
+estimativa é identificada separadamente do custo observado.
+
+
+## D-028 — Incerto sem candidato não apaga dado já coletado
+**Data:** 2026-09-11
+**Contexto:** conv_00748 informa Renault Duster 2003; ao extrair idade no turno
+seguinte, o modelo devolveu ano incerto com valor null. O merge apagava 2003.
+**Alternativas:** qualquer atualização substitui; marcar o valor anterior incerto;
+preservar informação até receber um candidato novo.
+**Decisão:** ausência de candidato não apaga valor anterior, inclusive quando
+status é incerto. Um candidato incerto diferente continua representável para
+confirmação. A regressão reproduziu o caso antes da correção.
+**Consequência:** replay das mesmas capturas subiu ano de 93,84% para 93,88%,
+sem modificar resposta do modelo nem alterar custo ou latência medidos.
+
+## D-029 — Mini mantido, pisos de regressão separados de qualidade de produção
+**Data:** 2026-09-11
+**Contexto:** 2.500 casos reais: 88,48% em idade e 93,88% em ano após corrigir o
+merge. Das conversas, 288 falharam por indisponibilidade/prazo; nas 2.212 restantes,
+ambos os slots ficaram corretos. Mediana 1.575,94 ms, p95 2.346,20 ms.
+**Alternativas:** aumentar orçamento; trocar modelo; manter limites e registrar
+qualidade efetiva sem ocultar indisponibilidade.
+**Decisão:** manter openai/gpt-4.1-mini e orçamento 2,5 s, timeout 2 s. Piloto nano
+em 24 casos teve duas interrupções e um erro de idade; não justificou a troca.
+Pisos inteiros imediatamente abaixo do medido: idade 88%, ano 93%. Capturas reais
+são versionadas; replay é padrão sem rede. Valores originais anteriores ao ajuste
+de merge também são preservados.
+**Consequência:** pisos detectam regressão, não aprovam produção. A perda de 11,52%
+por indisponibilidade/prazo exige calibração futura. Custo observado US$ 2,6678412
+em 7.010 respostas com uso; estimativa US$ 2,777447 nas 7.298 chamadas pela média
+das respostas conhecidas. Custos desconhecidos não foram tratados como zero.
+Comparação nano adicionou US$ 0,0068511 conhecidos, separadamente.

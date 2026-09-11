@@ -479,8 +479,8 @@ QUOTE_FAILURE_RATE=1.0 docker compose up   # força a escada até o N3
 
 | Métrica | Baseline humana | Agente |
 |---|---|---|
-| Extração de idade (2.500 casos) | — | `<preencher>` |
-| Extração de ano do veículo | — | `<preencher>` |
+| Extração de idade (2.500 casos) | — | 88,48% (2.212/2.500) |
+| Extração de ano do veículo | — | 93,88% (2.347/2.500) |
 | Recusas corretas (751 casos) | 0 / 751 | `<preencher>` |
 | Cotações consistentes com a tabela | 0 / 2.500 | `<preencher>` |
 | Menção de carência quando aplicável | 0 / 2.500 | `<preencher>` |
@@ -674,3 +674,80 @@ Validação da tarefa 7: **381 testes rápidos passaram em 7,79 s**, dez casos s
 excluídos, Ruff e mypy estrito limpos. O perfil local apontou acesso a arquivos
 como custo dominante: stat consumiu 4,56 s na coleta instrumentada em /mnt/c.
 O modo importlib reduziu a coleta de 4,34 s para 3,61 s sem remover testes.
+
+
+### Extração estruturada e cliente LLM (tarefa 8)
+
+Workspace ativo: `/home/rafael/namastex-test-tecnico`; original em `/mnt/c`
+preservado. Os mesmos 381 testes caíram de 7,79 s para 1,61 s após a migração.
+
+Avaliação real em 2.500 conversas com `openai/gpt-4.1-mini`, timeout de 2 s,
+orçamento de 2,5 s, limite de 4.000 tokens por conversa e 16 conversas concorrentes.
+As 24 chamadas do piloto inicial foram reaproveitadas. O replay usa as mesmas
+respostas e não chama a rede. O prompt permanece provisório.
+
+| Métrica | Resultado |
+|---|---|
+| Idade | **88,48% — 2.212/2.500** |
+| Ano-modelo | **93,88% — 2.347/2.500** |
+| Chamadas físicas | 7.298 |
+| Conversas interrompidas por indisponibilidade/prazo | **288 — 11,52%** |
+| Conversas concluídas sem interrupção | 2.212; idade e ano corretos nas 2.212 |
+| CEP recuperado privadamente como string | 2.500/2.500; zero perdas de zero inicial |
+| CEP inteiro emitido pelo modelo | 0; o prompt solicita CEP null |
+| Tokens conhecidos, entrada / saída | 5.226.839 / 360.691 |
+| Custo conhecido da execução completa | US$ 2,6678412 |
+| Custo total estimado | **US$ 2,777447** |
+| Latência mediana / p95 por chamada | **1.575,94 ms / 2.346,20 ms** |
+| Conversas com limite de tokens excedido | 0 |
+
+As 288 chamadas sem resposta de uso têm custo desconhecido. A estimativa aplica
+às 7.298 chamadas o custo médio das 7.010 respostas com uso; não é uma fatura.
+As latências incluem todas as chamadas, inclusive falhas. A auditoria de CEP
+mede captura determinística antes da redação, não acurácia LLM; CEP não entra
+no contexto enviado ao modelo.
+
+A medição inicial tinha 93,84% em ano-modelo. Um caso (`conv_00748`) revelou que
+uma atualização incerta sem candidato apagava o ano já informado. Corrigido o
+merge com teste de regressão, as mesmas capturas produziram 93,88%. Os relatórios
+iniciais foram preservados; nenhuma resposta foi fabricada ou substituída.
+
+As falhas restantes são operacionais. Por formato, houve 99/808 interrupções em
+marca/modelo/ano (12,25%), 102/831 em "e um modelo ano" (12,27%) e 87/861 em
+"modelo, ano" (10,10%). Esses números não demonstram dificuldade linguística:
+não houve erro de slot nas conversas concluídas após corrigir o merge.
+
+O mini foi mantido pela qualidade observada nas respostas concluídas. Um piloto
+comparativo do `openai/gpt-4.1-nano` em 24 casos teve duas interrupções e um erro
+de idade: 87,5% em idade, 100% em ano; mediana 1.489,61 ms e p95 2.051,31 ms.
+A amostra é pequena e não demonstrou melhoria suficiente para trocar o modelo.
+Seu custo conhecido adicional foi US$ 0,0068511. Ambos oferecem JSON Schema;
+capacidades e preços estão nas páginas oficiais do
+[mini](https://openrouter.ai/openai/gpt-4.1-mini) e do
+[nano](https://openrouter.ai/openai/gpt-4.1-nano).
+
+Os pisos de regressão são **88% para idade e 93% para ano**, imediatamente abaixo
+do observado. Não são SLOs de produção: 11,52% de conversas interrompidas ainda
+exigem calibrar latência/roteamento antes de atender leads reais. Os limites de
+tempo não foram aumentados para esconder essa perda.
+
+Configure `.env` localmente a partir de `.env.example`; ela é ignorada pelo Git.
+O corpus bruto continua externo, indicado por `AUTOSEGURO_DATASET`.
+
+```bash
+uv run pytest -m "not slow"
+# Gravação explícita: exige chave local e consome tokens.
+uv run --env-file .env python -m scripts.evaluate_extraction --mode record
+# Reprodução: não usa chave nem rede.
+uv run python -m scripts.evaluate_extraction --mode replay
+uv run pytest -m eval
+```
+
+Capturas, gabaritos redigidos, relatório e limiares ficam em
+`tests/fixtures/llm-evaluation/`; o piloto comparativo está em
+`tests/fixtures/llm-comparison-nano/`. Fixture ausente ou inválida falha
+explicitamente. Credencial e mensagens originais não fazem parte das capturas.
+
+Validação final: **453 testes rápidos em 2,22 s**; **eval por replay em 20,96 s**,
+sem rede; **464 testes da suíte completa em 25,98 s**. Ruff e mypy limpos
+(57 arquivos).

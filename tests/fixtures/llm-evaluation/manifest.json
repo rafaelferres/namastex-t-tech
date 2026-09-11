@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "source": "real_recording",
+  "config": {
+    "extractor_model": "openai/gpt-4.1-mini",
+    "conversation_model": "openai/gpt-4.1",
+    "timeout_seconds": 2.0,
+    "budget_seconds": 2.5,
+    "conversation_token_limit": 4000
+  },
+  "private_cep_audit": {
+    "total": 2500,
+    "correct": 2500,
+    "missing": 0,
+    "integer": 0,
+    "leading_zero_lost": 0,
+    "scope": "Captura determinística privada sobre corpus original antes da redação"
+  },
+  "case_count": 2500,
+  "measurement_date": "2026-09-11",
+  "recording_concurrency": 16,
+  "pilot_reused_calls": 24,
+  "notes": "Relatório final recalculado das mesmas capturas após corrigir merge de incerto sem candidato; initial_report preserva a medição anterior."
+}

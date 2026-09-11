@@ -1,0 +1,1 @@
+{"digest": "c9dffbd3bf5b7c9f033bcaa47aea5c1a8d545c5ff3ea32afc60cc4ee7e8c1021", "response": {"completion_tokens": 32, "content": "{\"plano_id\": null, \"idade\": null, \"veiculo_ano\": null, \"cep\": null, \"data_inicio\": null}", "cost": "0.0003448", "latency_ms": 1276.9612240008428, "model": "openai/gpt-4.1-mini", "prompt_tokens": 734}}
