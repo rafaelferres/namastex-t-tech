@@ -1,0 +1,14 @@
+Validação com API real do desafio, perfil sintético, banco SQLite novo.
+QUOTE_FAILURE_RATE=0 e QUOTE_SLOW_RATE=0, porta local 18000.
+Recorder drenado antes de executar a inspeção em outro processo.
+
+$ uv run python -m interfaces.trace b104e0e6feae44948dec00e2a565406a --database /tmp/task5-verified.sqlite
+Cotação b104e0e6feae44948dec00e2a565406a | conversa 1b34d04d22d54d4f9b32ad1ee7556403
+Tentativa 1: quoted | 31 ms | origem=api | HTTP 200 | erro=—
+Desfecho: quoted | 578 ms | origem=api | HTTP — | erro=—
+
+$ uv run python -m interfaces.trace 181caf52661642bb9bd85b2c549ff121 --database /tmp/task5-verified.sqlite
+Cotação 181caf52661642bb9bd85b2c549ff121 | conversa 1b34d04d22d54d4f9b32ad1ee7556403
+Desfecho: quoted | 1 ms | origem=cache | HTTP — | erro=—
+
+A latência lógica inclui catálogo e cache. Este exemplo não é benchmark de throughput.

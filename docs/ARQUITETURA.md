@@ -3,8 +3,8 @@
 Documento técnico do sistema. Para as decisões e seus fundamentos, ver o
 `README.md`. Para as regras que governam alterações de código, ver `AGENTS.md`.
 
-Estado após a Tarefa 4: domínio, portas, HTTP, catálogo, guard, retry, hedge e
-cache SQLite estão implementados. Trace, demais tabelas de persistência,
+Estado após a Tarefa 5: domínio, HTTP, catálogo, cadeia completa, cache SQLite,
+trace lógico/físico e inspeção CLI estão implementados. Demais tabelas,
 grafo e adapters de entrada ainda são desenho das próximas fases.
 
 ---
@@ -165,7 +165,7 @@ novo, nunca como condicional dentro de um existente.
 | `Guard` | recusa determinística sem tocar a rede; falha aberto |
 | `Cache` | cotação equivalente já obtida; erro de cache nunca propaga |
 | `Retry` | backoff com jitter, teto de tentativas e de tempo |
-| `Hedge` | segunda chamada especulativa aos 1,5s |
+| `Hedge` | segunda chamada especulativa aos 100 ms |
 | `WireTrace` | telemetria física: status, latência, tentativa |
 | `Http` | única classe que conhece status code |
 
@@ -184,7 +184,7 @@ Com timeout de 2s, a resposta lenta também é falha do ponto de vista do client
 | Cenário | Taxa por tentativa | Residual em 3 tentativas |
 |---|---|---|
 | sem hedge | 30% | 2,7% |
-| com hedge aos 1,5s | 23% | 1,2% |
+| com hedge aos 100 ms | 23% | 1,2% |
 
 Por isso **o hedge não é otimização, é componente necessário**: sem corte por deadline, ele reduz a falha
 residual teórica de 2,7% para aproximadamente 1,2%. Ele é viável porque `/quote` é função pura, sem efeito
@@ -197,7 +197,8 @@ O hedge trata apenas latência. Falha rápida é responsabilidade do `Retry`.
 `RetryingQuoteProvider` recebe provider interno, limites de tentativas/delays,
 orçamento, sleep, RNG callable e Clock. Captura somente QuoteUnavailable;
 QuoteContractError atravessa intacto, e Quote/Declined encerram a operação.
-O backoff usa full jitter, com teto exponencial saturado. O deadline absoluto
+A configuração atual usa jitter uniforme 0–20 ms por pausa (base=max=0.02),
+sem crescimento exponencial; o mecanismo genérico continua configurável. O deadline absoluto
 inclui chamadas em andamento, canceladas e aguardadas quando o orçamento vence.
 Não dorme se o próximo delay consumir todo o tempo restante (D-005).
 
@@ -214,7 +215,7 @@ de conclusão, com o resumo `todas_falhas_suspeitas` preservando evidência de a
 Não altera a marca física `suspeita_contrato`. Perdedor e timer são sempre
 cancelados e aguardados, também em cancelamento externo (D-007).
 
-Composição: `RetryingQuoteProvider(HedgingQuoteProvider(HttpQuoteProvider(...)))`.
+No wiring, WireTrace fica entre Hedge e Http e ApplicationTrace envolve toda a cadeia.
 Cada tentativa lógica do retry pode produzir até duas chamadas físicas.
 
 Portão medido com 10.000 execuções por configuração: **2,72% sem hedge** e
@@ -223,16 +224,53 @@ seed 42, tempo virtual, sucesso imediato e budget de 20 s para permitir as três
 tentativas completas. Não representa a disponibilidade do turno inteiro com
 budget de 6 s; esse corte precisa de medição própria na integração.
 
-### Orçamento de produção medido
+### Orçamento de produção e calibração
 
-`QuoteConfig.budget` usa `PRODUCTION_QUOTE_BUDGET = 3.5` e pode ser substituído
-no wiring. Com seed 42, 10.000 execuções por cenário e três tentativas: sem corte
-por tempo, 2,72% sem hedge e 1,18% com hedge; com 3,5 s, **3,29% sem hedge e
-2,43% com hedge**. Os 20 s da medição anterior nunca vinculam (máximo de 10,8 s).
-Mantidos timeout 2 s e janela 1,5 s: latência de sucesso ainda não foi medida,
-portanto encurtar timeout com base apenas no duplo seria otimização enganosa (D-008).
+QuoteConfig mantém budget 3,5 s, timeout 2 s, três tentativas; hedge agora 100 ms
+com jitter uniforme 0–20 ms por pausa. A medição real em localhost (500 chamadas,
+20 warmup, rates de falha/lentidão zero) deu mediana 15,88 ms, p95 29,17 ms,
+p99 44,73 ms e máximo 98,96 ms. Janela >2×p99, com margem de 55,27 ms (D-012).
+
+| Configuração | Budget | Antes | Agora |
+|---|---|---:|---:|
+| sem hedge | sem corte | 2,72% | 2,72% |
+| com hedge | sem corte | 1,18% | 1,18% |
+| sem hedge | 3,5 s | 3,29% | 3,29% |
+| com hedge | 3,5 s | 2,43% | 1,27% |
+
+São 10.000 execuções por cenário, seeds 42/2026, sucesso imediato no duplo.
+A diferença restante de 0,09 ponto percentual vem de combinações de lentidão que
+sobrevivem ao hedge; uma rodada pode consumir 2,1 s. Sem hedge, dois timeouts já
+consomem 4 s. Os 20 s usados como ausência de corte nunca vinculam.
 O budget cobre Retry/Hedge/Http; guard e I/O de cache ficam fora dele nesta fase.
 O prazo total do turno exige propagação futura pela aplicação.
+
+### Trace implementado
+
+ApplicationTrace → Guard → Cache → Retry → Hedge → WireTrace → Http.
+Ambos os traces recebem AttemptRecorder, CorrelationProvider e Clock. O provedor
+ContextCorrelationProvider cria uma sessão por cotação usando factory injetada
+para ids internos; ContextVars propagam sessão aos filhos asyncio sem misturar
+cotações concorrentes. Não usar nome, CPF ou telefone como ids de correlação.
+Tentativa zero representa desfecho lógico; 1..N é ordem de início físico. Na
+composição sequencial Retry(Hedge), a chamada sobreposta é marcada hedge (D-013).
+
+A folha HTTP observa o status num callback técnico task-local, sem HTTP no domínio.
+WireTrace registra duração de cada chamada, ano normalizado, status e classe do
+erro. Cancelamento é unavailable/CancelledError, com HTTP ausente se não houve
+resposta. Suspeita de contrato é sufixo em erro, nunca conteúdo externo. Instantes
+são UTC; normalização continua usando o calendário local da API.
+
+AttemptRecorder.record é uma entrega síncrona não bloqueante. O adapter
+BufferedAttemptRecorder limita a fila a 1.024 pendentes, escreve fora do caminho
+de resposta e registra falha/overflow sem PII. Drenar com flush antes de inspeção
+ou fechamento. Crash pode perder pendentes. A regressão de recusa rápida virar
+indisponibilidade por espera de gravação foi reproduzida e corrigida (D-014).
+
+`python -m interfaces.trace <trace_id> --database arquivo.sqlite` usa
+InspectQuoteTrace e leitor SQLite através do wiring. Mostra tentativas por ordem
+de início, seguidas do desfecho; ausência de desfecho é explícita. Modo somente
+leitura. Pacotes planos de src são instalados por uv sync, incluindo schema.sql.
 
 ### Cache exato
 
@@ -247,7 +285,7 @@ TTL   = até meia-noite
 O dia entra na chave porque a API deriva a idade do veículo de `date.today()`.
 Recusas também são cacheadas, por serem igualmente determinísticas.
 
-O wiring atual monta `Guard → Cache → Retry → Hedge → Http`, com todas as
+O wiring atual monta a cadeia instrumentada descrita acima, com todas as
 dependências injetadas. `EligibilityGuardProvider` marca recusas como regra_local,
 preserva o request, avalia uma cópia com ano seguinte normalizado e falha aberto
 se `current()` retornar None ou lançar exceção. Erro de parse continua explícito
@@ -318,7 +356,7 @@ Mensagens das exceções não reproduzem corpo HTTP ou erro de transporte origin
 
 `ano_normalizado` acompanha Quote, Declined e ambas as exceções por chamada,
 sem estado compartilhado no provider (D-003). Nenhum status HTTP entra nos objetos
-de domínio. O futuro trace consumirá esses metadados; ele ainda não foi implementado.
+de domínio. WireTrace e ApplicationTrace consomem esses metadados.
 
 ### Circuit breaker
 
@@ -560,10 +598,12 @@ SQLite não tem tipo decimal nem booleano nativo.
 arredondado de forma errada é exatamente o tipo de defeito que a invariante do
 preço existe para evitar.
 
-### Fundação implementada na Tarefa 4
+### Persistência implementada após a Tarefa 5
 
-`infrastructure/persistence/schema.sql` contém somente `quote_cache`, com
-fingerprint, outcome JSON e expira_em em TEXT. `connect` aplica o schema no
+`infrastructure/persistence/schema.sql` contém `quote_cache` e `quote_attempts`,
+mais idx_attempts_trace. Cache guarda fingerprint, outcome JSON e expira_em em TEXT.
+quote_attempts.conversation_id ainda não tem FK; ela será adicionada quando a
+tabela conversations existir. O id da linha é UUID e tentativa zero é resolução lógica. `connect` aplica o schema no
 startup e configura os três pragmas. WAL é verificado em arquivo temporário;
 SQLite em memória usa journal_mode=memory por limitação do próprio SQLite.
 Decimais são strings no JSON e instantes são ISO-8601 em UTC. Não há request
@@ -698,7 +738,7 @@ versão fixada — se não existir, a ponte precisa ser explícita e única, nun
 |---|---|
 | Turno completo | ~6s, com deadline propagation |
 | Chamada individual à `/quote` | 2s |
-| Disparo do hedge | 1,5s |
+| Disparo do hedge | 100 ms, calibrado no p99 local |
 | Tentativas de cotação | 3, dentro do orçamento restante |
 | Tokens por conversa | limite configurado; excedê-lo escala |
 

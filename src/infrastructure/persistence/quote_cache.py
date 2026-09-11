@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import sqlite3
-from collections.abc import Callable
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -12,29 +10,7 @@ from threading import Lock
 
 from application.ports import Clock
 from domain.quote import Declined, Quote, QuoteOutcome
-
-
-async def _run[T](operation: Callable[[], T]) -> T:
-    """Cancelamento não pode abandonar um worker que ainda usa a conexão."""
-    worker = asyncio.create_task(asyncio.to_thread(operation))
-    cancelled = False
-    while True:
-        try:
-            result = await asyncio.shield(worker)
-            break
-        except asyncio.CancelledError:
-            cancelled = True
-            if worker.done():
-                if not worker.cancelled():
-                    worker.exception()
-                raise
-        except Exception:
-            if cancelled:
-                raise asyncio.CancelledError() from None
-            raise
-    if cancelled:
-        raise asyncio.CancelledError()
-    return result
+from infrastructure.persistence._worker import run_sqlite
 
 
 def _decimal_text(value: object) -> str:
@@ -83,7 +59,7 @@ class SQLiteQuoteCache:
         self._lock = Lock()
 
     async def get(self, fingerprint: str) -> QuoteOutcome | None:
-        row = await _run(partial(self._read, fingerprint))
+        row = await run_sqlite(partial(self._read, fingerprint))
         if row is None:
             return None
         serialized, expires_at = row
@@ -99,7 +75,7 @@ class SQLiteQuoteCache:
             return (str(row[0]), str(row[1])) if row is not None else None
 
     async def set(self, fingerprint: str, outcome: QuoteOutcome, expires_at: datetime) -> None:
-        await _run(
+        await run_sqlite(
             partial(
                 self._write, fingerprint, _encode(outcome), expires_at.astimezone(UTC).isoformat()
             )
