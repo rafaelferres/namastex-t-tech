@@ -4,6 +4,29 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Fixed — Tarefa 9.1, 2026-09-11
+
+- Filtro direcional no conversador: a fala do lead chega inteira, só com PII
+  redigida. O filtro antigo descartava **437 de 16.470 mensagens do lead (2,65%)**
+  no dataset, uma em cada uma de 437 conversas, todas das objeções "a franquia ta
+  alta" e "o preco ta salgado". As seis objeções canônicas e uma contraproposta
+  numérica ("consigo por 180 na concorrente") agora chegam ao modelo.
+- Guardrail de saída mira valor monetário, não dígito: "carência de 30 dias" e
+  "assistência 24h" passam; `R$`, reais, decimal de duas casas e número colado a
+  termo de valor caem para `render_safe_reply` e viram evento `guardrail` no trace
+  com o texto ofensor. O turno não é mais derrubado.
+- `plano_id` da tool `cotar` é enum fechado derivado de ProductFacts. Id fora do
+  catálogo é erro de contrato registrado como `converse/contrato_llm`, com resposta
+  de template; não chega à cadeia de cotação nem vira recusa comercial.
+- Invariante testada no texto final: recusa sem valor nem linguagem de
+  instabilidade; indisponível sem valor nem promessa de prazo; cotação com valores
+  iguais ao payload por `Decimal`. Conversa completa em SQLite com cadeia real:
+  só a apresentação tem valor, e só após linha `quoted` em `quote_attempts`.
+  Duas tentativas do modelo de escrever preço foram contidas pelo guardrail.
+- Validação: **526 passed, 11 deselected in 5.00s** no loop rápido; ruff limpo;
+  mypy limpo em 69 arquivos. Ajustes na árvore da tarefa 9: schema agora lista
+  `turn_events` e duas linhas longas foram quebradas para o ruff.
+
 ### Added — Tarefa 8, 2026-09-11
 
 - Cliente OpenRouter por papel, schema Pydantic, timeout/orçamento e sinal

@@ -28,6 +28,10 @@ def format_brl(value: Decimal) -> str:
     return f"R$ {grouped},{fraction.ljust(2, '0')[:2]}"
 
 
+def _listing(names: list[str]) -> str:
+    return ", ".join(names[:-1]) + " e " + names[-1] if len(names) > 1 else names[0]
+
+
 def _coverage_list(codes: tuple[str, ...]) -> str:
     try:
         names = [_COVERAGES[code] for code in codes]
@@ -35,7 +39,15 @@ def _coverage_list(codes: tuple[str, ...]) -> str:
         raise QuoteContractError("Cobertura sem descrição aprovada") from None
     if not names:
         raise QuoteContractError("Coberturas ausentes")
-    return ", ".join(names[:-1]) + " e " + names[-1] if len(names) > 1 else names[0]
+    return _listing(names)
+
+
+def render_safe_reply(products: tuple[ProductFacts, ...]) -> str:
+    """Reserva quando a fala do modelo é descartada; nunca carrega valor."""
+    return (
+        f"Posso seguir com a cotação dos planos {_listing([item.nome for item in products])}. "
+        "Qual deles você prefere?"
+    )
 
 
 def render_quote(payload: object, facts: ProductFacts) -> str:

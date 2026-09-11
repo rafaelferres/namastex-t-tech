@@ -20,6 +20,7 @@ from application.llm import (
     LLMRequest,
     LLMResponse,
     LLMRole,
+    LLMToolCall,
     LLMUnavailable,
 )
 from application.ports import Clock, SystemClock
@@ -63,11 +64,14 @@ class RecordedLLMClient:
     async def complete(self, request: LLMRequest) -> LLMResponse:
         position = self._positions.get(request.conversation_id, 0)
         self._positions[request.conversation_id] = position + 1
+        canonical = asdict(request)
+        if not request.tools:
+            canonical.pop("tools")
         data = {
             "version": 1,
             "position": position,
             "model": self._models[request.role],
-            "request": asdict(request),
+            "request": canonical,
             "settings": self._settings,
         }
         digest = hashlib.sha256(
@@ -99,11 +103,45 @@ class RecordedLLMClient:
                 error.latency_ms = (self._clock.monotonic() - start) * 1000
                 self._save(path, {"digest": digest, "error": kind, "latency_ms": error.latency_ms})
                 raise
-            safe = replace(response, content=self._privacy.redact(response.content))
+            safe = replace(
+                response,
+                content=self._privacy.redact(response.content),
+                tool_calls=tuple(
+                    LLMToolCall(
+                        self._privacy.redact(call.name),
+                        self._redact_arguments(call.arguments),
+                    )
+                    for call in response.tool_calls
+                ),
+            )
             payload = asdict(safe)
             payload["cost"] = str(safe.cost) if safe.cost is not None else None
             self._save(path, {"digest": digest, "response": payload})
             return safe
+
+    def _redact_arguments(self, arguments: dict[str, object]) -> dict[str, object]:
+        return {
+            self._privacy.redact(key): self._redact_value(value, field_name=key)
+            for key, value in arguments.items()
+        }
+
+    def _redact_value(self, value: object, *, field_name: str = "") -> object:
+        # Numeric CEPs may have lost a leading zero before reaching this boundary.
+        if field_name.casefold() == "cep" and value is not None:
+            return "[CEP]"
+        if isinstance(value, dict):
+            return self._redact_arguments(value)
+        if isinstance(value, list):
+            return [self._redact_value(item) for item in value]
+        if isinstance(value, str):
+            return self._privacy.redact(value)
+        if type(value) in (int, float):
+            text = str(value)
+            redacted = self._privacy.redact(text)
+            return redacted if redacted != text else value
+        if value is None or isinstance(value, bool):
+            return value
+        raise LLMContractError()
 
     def _save(self, path: Path, payload: dict[str, object]) -> None:
         self._directory.mkdir(parents=True, exist_ok=True)
@@ -154,6 +192,22 @@ class RecordedLLMClient:
                 item["completion_tokens"],
                 cost,
                 latency,
+                self._load_tools(item.get("tool_calls", [])),
             )
         except (KeyError, TypeError, ValueError, ArithmeticError, OSError):
             raise LLMFixtureInvalid() from None
+
+    @staticmethod
+    def _load_tools(value: object) -> tuple[LLMToolCall, ...]:
+        if not isinstance(value, list):
+            raise ValueError("tools")
+        calls = []
+        for item in value:
+            if (
+                not isinstance(item, dict)
+                or not isinstance(item.get("name"), str)
+                or not isinstance(item.get("arguments"), dict)
+            ):
+                raise ValueError("tools")
+            calls.append(LLMToolCall(item["name"], item["arguments"]))
+        return tuple(calls)

@@ -25,8 +25,12 @@ class InboundMessage:
     media_ref: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
-        if not all((self.channel, self.conversation_id, self.channel_user_id,
-                    self.provider_message_id)) or self.indice < 0:
+        if (
+            not all(
+                (self.channel, self.conversation_id, self.channel_user_id, self.provider_message_id)
+            )
+            or self.indice < 0
+        ):
             raise ValueError("Envelope sem identidade ou índice válido")
         if self.tipo not in ("text", "audio", "image", "document"):
             raise ValueError("Tipo de mensagem inválido")
@@ -41,6 +45,7 @@ class Intent(StrEnum):
     PEDIR_DADO = "pedir_dado"
     RECUSAR = "recusar"
     ESCALAR = "escalar"
+    CONVERSAR = "conversar"
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,10 +64,15 @@ class PedirDado:
 
 
 @dataclass(frozen=True, slots=True)
+class MensagemConversacional:
+    texto: str
+
+
+@dataclass(frozen=True, slots=True)
 class OutboundMessage:
     conversation_id: str
     intent: Intent
-    payload: ApresentarCotacao | PedirDado | Declined | HandoffDecision
+    payload: ApresentarCotacao | PedirDado | Declined | HandoffDecision | MensagemConversacional
 
     def __post_init__(self) -> None:
         if not self.conversation_id.strip():
@@ -74,6 +84,7 @@ class OutboundMessage:
             Intent.PEDIR_DADO: PedirDado,
             Intent.RECUSAR: Declined,
             Intent.ESCALAR: HandoffDecision,
+            Intent.CONVERSAR: MensagemConversacional,
         }
         if not isinstance(self.payload, expected[self.intent]):
             raise ValueError("Payload incompatível com a intenção")

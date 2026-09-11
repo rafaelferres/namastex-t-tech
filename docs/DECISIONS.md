@@ -480,3 +480,30 @@ por indisponibilidade/prazo exige calibração futura. Custo observado US$ 2,667
 em 7.010 respostas com uso; estimativa US$ 2,777447 nas 7.298 chamadas pela média
 das respostas conhecidas. Custos desconhecidos não foram tratados como zero.
 Comparação nano adicionou US$ 0,0068511 conhecidos, separadamente.
+
+## D-030 — Filtro direcional no conversador e guardrail observável
+**Data:** 2026-09-11
+**Contexto:** o conversador aplicava à entrada o mesmo filtro da saída. O histórico
+do grafo contém só fala do lead, então o filtro não protegia nada e apagava objeções:
+no dataset, 437 de 16.470 mensagens do lead (2,65%, uma por conversa em 437) —
+todas "a franquia ta alta" e "o preco ta salgado", duas das seis objeções canônicas.
+Na saída, qualquer dígito levantava LLMContractError e derrubava o turno, bloqueando
+"carência de 30 dias" e "assistência 24h". `plano_id` aceitava texto livre, e um erro
+de digitação do modelo virava `Declined("Plano inexistente")` para lead elegível.
+**Alternativas:** filtro simétrico; classificar papel de cada mensagem do histórico;
+filtro só na saída, com a regra de não comentar valor citado pelo lead no prompt.
+**Decisão:** direcional. Entrada passa intacta após redação de PII; não confirmar
+valor proposto pelo lead é regra de prompt. Saída mira padrão monetário: `R$`,
+reais/centavos, decimal de duas casas, número (dígito ou extenso a partir de dez)
+colado a termo de valor (custa, paga, mensalidade, prêmio, franquia, preço, parcela,
+sai/fica por) ou seguido de "por mês"/"mensais". Violação troca a fala por
+`render_safe_reply`, grava `turn_events` etapa `guardrail`/`violacao` com o texto
+redigido na coluna `erro` e segue o turno. A tool `cotar` declara enum fechado dos
+ProductFacts; plano fora dele é LLMContractError, que o grafo converte em resposta
+de template e evento `converse`/`contrato_llm`, sem tocar a cadeia de cotação.
+**Consequência:** o filtro é rede de proteção; a garantia continua sendo o modelo
+não receber `base_mensal` nem multiplicadores. Afirmações qualitativas ("o custo é
+baixo") deixam de ser bloqueadas, pois a invariante é valor, não vocabulário — isso
+supera os casos equivalentes de e83ba25. Falso positivo cai no template, lado
+seguro. Contagens um a nove por extenso não são detectadas perto de termo de valor;
+preço real nessa faixa não existe no catálogo.

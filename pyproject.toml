@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "httpx>=0.28,<0.29",
+    "langgraph>=1,<2",
+    "langgraph-checkpoint-sqlite>=3.0.1,<4",
     "pyarrow>=18,<24",
     "pydantic>=2.10,<3",
 ]

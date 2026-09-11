@@ -23,6 +23,8 @@ class HandoffReason(StrEnum):
     LACO = "laco_no_slot"
     ESCOPO = "fora_de_escopo"
     TOKENS = "limite_de_tokens"
+    LINGUAGEM = "linguagem_indisponivel"
+    PRAZO = "prazo_do_turno"
 
 
 class QuoteAttemptView(Protocol):
@@ -62,6 +64,8 @@ class ConversationContext:
     objecoes_preco: int = 0
     pede_humano: bool = False
     tokens_esgotados: bool = False
+    llm_indisponivel: bool = False
+    prazo_esgotado: bool = False
     slot_em_esclarecimento: SlotName | None = None
     tentativas_sem_avanco: int = 0
     assunto: Literal[
@@ -180,6 +184,20 @@ class PedidoHumano:
         return _decision(ctx, self.motivo) if ctx.pede_humano else None
 
 
+class LinguagemIndisponivel:
+    motivo = HandoffReason.LINGUAGEM
+
+    def evaluate(self, ctx: ConversationContext) -> HandoffDecision | None:
+        return _decision(ctx, self.motivo) if ctx.llm_indisponivel else None
+
+
+class PrazoDoTurno:
+    motivo = HandoffReason.PRAZO
+
+    def evaluate(self, ctx: ConversationContext) -> HandoffDecision | None:
+        return _decision(ctx, self.motivo) if ctx.prazo_esgotado else None
+
+
 @dataclass(frozen=True, slots=True)
 class LacoEsclarecimento:
     limite: int = 3
@@ -218,6 +236,8 @@ class HandoffPolicy:
                 MidiaNaoResolvida(),
                 CotacaoEsgotada(),
                 OrcamentoTokensEsgotado(),
+                PrazoDoTurno(),
+                LinguagemIndisponivel(),
                 DescontoForaTabela(),
                 PedidoHumano(),
                 LacoEsclarecimento(),
