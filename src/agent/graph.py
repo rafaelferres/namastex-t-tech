@@ -22,15 +22,16 @@ from agent.schemas.slots import Slots
 from agent.templates import (
     render_declined,
     render_handoff,
+    render_objection,
     render_quote,
     render_safe_reply,
     render_unavailable,
 )
-from application.ingest import IngestedTurn, price_objection
+from application.ingest import IngestedTurn
 from application.llm import LLMContractError, LLMUnavailable, TokenBudgetExceeded
 from application.ports import AcceptanceRulesProvider, Clock, QuoteProvider
 from application.private_slots import PrivateCepStore
-from application.tracing import TraceReader
+from application.tracing import ConversationAttemptsReader, turn_correlation
 from application.turns import TurnEvent, TurnRecorder
 from domain.handoff import (
     CollectedSlot,
@@ -48,6 +49,7 @@ from domain.messages import (
     OutboundMessage,
     PedirDado,
 )
+from domain.objection import Objecao, objecao_lexical
 from domain.product import ProductFacts
 from domain.quote import Declined, Quote, QuoteRequest, QuoteUnavailable
 from infrastructure.privacy import PrivacyRedactor
@@ -55,9 +57,10 @@ from infrastructure.privacy import PrivacyRedactor
 
 @dataclass(frozen=True, slots=True)
 class TurnConfig:
+    # Calibrado com medição real (D-034): tetos acima do p99 de extração e fala.
     budget_seconds: float = 10.0
-    extraction_seconds: float = 4.0
-    conversation_seconds: float = 3.0
+    extraction_seconds: float = 3.5
+    conversation_seconds: float = 4.5
     quote_seconds: float = 3.5
 
     def __post_init__(self) -> None:
@@ -87,9 +90,21 @@ class TurnState(TypedDict, total=False):
     pedido: str | None
     sem_avanco: int
     cep_coletado: bool
+    objecao: str | None
+    objecao_fonte: str | None
 
 
 type HandoffWriter = Callable[[str, str, HandoffDecision], Awaitable[None]]
+
+
+def _objection_values(entrada: str, model: Objecao | None) -> dict[str, str | None]:
+    # Piso determinístico abaixo do sinal do modelo, mesmo desenho da regra de desconto.
+    if model is not None:
+        return {"objecao": model.value, "objecao_fonte": "modelo"}
+    floor = objecao_lexical(entrada)
+    if floor is None:
+        return {"objecao": None, "objecao_fonte": None}
+    return {"objecao": floor.value, "objecao_fonte": "lexico"}
 
 
 class SalesGraph:
@@ -103,7 +118,7 @@ class SalesGraph:
         products: tuple[ProductFacts, ...],
         clock: Clock,
         handoff: HandoffWriter,
-        traces: TraceReader,
+        traces: ConversationAttemptsReader,
         checkpointer: BaseCheckpointSaver[Any],
         config: TurnConfig,
         private_slots: PrivateCepStore | None = None,
@@ -179,6 +194,8 @@ class SalesGraph:
                 "objecoes_preco": objecoes_preco,
                 "tipo_midia": tipo_midia,
                 "cep_coletado": cep_coletado or previous.values.get("cep_coletado", False),
+                "objecao": None,
+                "objecao_fonte": None,
             }
             return cast(TurnState, await self._graph.ainvoke(state, config))
 
@@ -310,7 +327,7 @@ class SalesGraph:
             if item is not None and item["valor"] is not None:
                 collected[cast(SlotName, name)] = CollectedSlot(item["valor"], item["proveniencia"])
         try:
-            attempts = await self._traces.read(state["trace_id"])
+            attempts = await self._traces.read_conversation(state["conversation_id"])
         except Exception:
             logging.getLogger(__name__).error("turn_trace_read_failed")
             attempts = ()
@@ -400,8 +417,6 @@ class SalesGraph:
             return "handoff"
         if state.get("pedido"):
             return END
-        if price_objection(state["entrada"]):
-            return "objection"
         return "converse"
 
     async def _converse(self, state: TurnState) -> TurnState:
@@ -431,6 +446,7 @@ class SalesGraph:
                 plano=result.plano_id,
                 texto=result.texto,
                 sugestao=result.escalacao,
+                **_objection_values(state["entrada"], result.objecao),
             )
         except LLMContractError:
             # Erro do modelo (ex.: plano fora do catálogo) nunca vira recusa comercial.
@@ -441,6 +457,7 @@ class SalesGraph:
                 start,
                 texto=render_safe_reply(self._products),
                 erro="contrato_llm",
+                **_objection_values(state["entrada"], None),
             )
         except TokenBudgetExceeded:
             error = "tokens"
@@ -451,7 +468,9 @@ class SalesGraph:
     async def _after_converse(self, state: TurnState) -> str:
         if (await self._decision(state)).escalar:
             return "handoff"
-        return "quote" if state.get("plano") else END
+        if state.get("plano"):
+            return "quote"
+        return "objection" if state.get("objecao") else END
 
     async def _get_quote(self, state: TurnState) -> TurnState:
         start = self._clock.monotonic()
@@ -463,8 +482,12 @@ class SalesGraph:
             raise RuntimeError("CEP coletado indisponível; cotação não enviada")
         req = replace(req, cep=cep)
         try:
-            async with asyncio.timeout(min(self._remaining(state), self._config.quote_seconds)):
-                result = await self._quote.quote(req)
+            # O turno empresta trace_id e conversa às tentativas: snapshot e timeline casam.
+            with turn_correlation(state["trace_id"], state["conversation_id"]):
+                async with asyncio.timeout(
+                    min(self._remaining(state), self._config.quote_seconds)
+                ):
+                    result = await self._quote.quote(req)
             payload = json.loads(json.dumps(asdict(result), default=str))
             if payload.get("primeiro_pagamento_pro_rata") is None:
                 payload.pop("primeiro_pagamento_pro_rata", None)
@@ -516,11 +539,11 @@ class SalesGraph:
         )
 
     async def _objection(self, state: TurnState) -> TurnState:
+        objection = Objecao(cast(str, state.get("objecao")))
+        # Categoria e fonte (modelo ou léxico) ficam na timeline para medir divergência.
+        self._event(state, "objecao", state.get("objecao_fonte") or "lexico", 0, objection.value)
         return self._update(
-            state,
-            "objection",
-            self._clock.monotonic(),
-            texto="Entendo sua preocupação. Podemos conversar sobre as coberturas de outro plano.",
+            state, "objection", self._clock.monotonic(), texto=render_objection(objection)
         )
 
 

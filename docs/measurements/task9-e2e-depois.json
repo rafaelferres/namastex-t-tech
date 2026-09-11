@@ -1,0 +1,1194 @@
+{
+  "cenario": "depois",
+  "turno": {
+    "total": 10.0,
+    "extracao": 3.5,
+    "fala": 4.5,
+    "cotacao": 3.5
+  },
+  "llm": {
+    "timeout_http_s": 4.5,
+    "teto_chamada_s": 4.5,
+    "tokens_conversa": 16000
+  },
+  "amostra": 150,
+  "semente": 2026,
+  "concorrencia": 8,
+  "duracao_s": 204.9,
+  "desfechos": {
+    "midia": 63,
+    "recusa_regra": 44,
+    "cotada": 38,
+    "llm_indisponivel": 4,
+    "indisponibilidade": 1
+  },
+  "conclusao": 0.25333333333333335,
+  "etapas_ms": {
+    "converse": {
+      "n": 123,
+      "p50": 1652,
+      "p95": 3079,
+      "p99": 4083,
+      "max": 4328
+    },
+    "extract": {
+      "n": 573,
+      "p50": 1660,
+      "p95": 2608,
+      "p99": 3475,
+      "max": 3502
+    },
+    "handoff": {
+      "n": 68,
+      "p50": 23,
+      "p95": 69,
+      "p99": 111,
+      "max": 111
+    },
+    "objection": {
+      "n": 35,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0
+    },
+    "policy": {
+      "n": 573,
+      "p50": 2,
+      "p95": 4,
+      "p99": 12,
+      "max": 66
+    },
+    "present": {
+      "n": 39,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0
+    },
+    "quote": {
+      "n": 39,
+      "p50": 70,
+      "p95": 2046,
+      "p99": 2166,
+      "max": 2166
+    }
+  },
+  "turno_ms": {
+    "n": 573,
+    "p50": 1684.0,
+    "p95": 4418.0,
+    "p99": 5537.0,
+    "max": 6780.0
+  },
+  "turnos_acima_de": {
+    "6s": 2,
+    "8s": 0,
+    "10s": 0
+  },
+  "espera_lead_s": {
+    "n": 573,
+    "p50": 2.250602821994107,
+    "p95": 4.987506917997962,
+    "p99": 6.110090643000149,
+    "max": 7.307864939000865
+  },
+  "cotacao_logica_ms": {
+    "n": 39,
+    "p50": 56,
+    "p95": 2042,
+    "p99": 2161,
+    "max": 2161
+  },
+  "cotacao_status": {
+    "quoted": 38,
+    "unavailable": 1
+  },
+  "llm_ms": {
+    "extrator": {
+      "n": 568,
+      "p50": 1654.4052850003936,
+      "p95": 2544.105840002885,
+      "p99": 3158.169812995766,
+      "max": 3472.001187001297
+    },
+    "conversador": {
+      "n": 123,
+      "p50": 1650.0180649964022,
+      "p95": 3075.8385849985643,
+      "p99": 4081.5558549948037,
+      "max": 4325.8236780020525
+    }
+  },
+  "llm_chamadas": 696,
+  "llm_falhas": 0,
+  "custo_conhecido_usd": "0.4995680",
+  "tokens_conversa": {
+    "n": 150,
+    "p50": 2403,
+    "p95": 9396,
+    "p99": 9504,
+    "max": 9510
+  },
+  "objecao": {
+    "conversas_com_objecao_enviada": 20,
+    "roteadas_ao_no": 20,
+    "eventos_por_fonte": {
+      "modelo": 35
+    }
+  },
+  "turnos_sinteticos": 74,
+  "turnos_totais": 573,
+  "conversas": [
+    {
+      "conversation_id": "conv_00487",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2406
+    },
+    {
+      "conversation_id": "conv_01308",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2409
+    },
+    {
+      "conversation_id": "conv_02058",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 1,
+      "tokens": 7664
+    },
+    {
+      "conversation_id": "conv_02096",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9460
+    },
+    {
+      "conversation_id": "conv_00420",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2425
+    },
+    {
+      "conversation_id": "conv_00914",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2395
+    },
+    {
+      "conversation_id": "conv_02461",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2417
+    },
+    {
+      "conversation_id": "conv_02279",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2394
+    },
+    {
+      "conversation_id": "conv_01722",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2380
+    },
+    {
+      "conversation_id": "conv_02345",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2410
+    },
+    {
+      "conversation_id": "conv_02243",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 2,
+      "tokens": 7657
+    },
+    {
+      "conversation_id": "conv_02010",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2374
+    },
+    {
+      "conversation_id": "conv_02402",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2399
+    },
+    {
+      "conversation_id": "conv_01806",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2403
+    },
+    {
+      "conversation_id": "conv_00982",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2415
+    },
+    {
+      "conversation_id": "conv_00010",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2403
+    },
+    {
+      "conversation_id": "conv_00330",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2391
+    },
+    {
+      "conversation_id": "conv_00453",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9396
+    },
+    {
+      "conversation_id": "conv_01176",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2390
+    },
+    {
+      "conversation_id": "conv_00401",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2399
+    },
+    {
+      "conversation_id": "conv_01841",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2373
+    },
+    {
+      "conversation_id": "conv_00047",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2400
+    },
+    {
+      "conversation_id": "conv_02008",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2390
+    },
+    {
+      "conversation_id": "conv_01287",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2387
+    },
+    {
+      "conversation_id": "conv_00861",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9368
+    },
+    {
+      "conversation_id": "conv_01627",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2388
+    },
+    {
+      "conversation_id": "conv_01030",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9379
+    },
+    {
+      "conversation_id": "conv_01424",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2385
+    },
+    {
+      "conversation_id": "conv_01460",
+      "desfecho": "cotada",
+      "turnos": 5,
+      "sinteticos": 2,
+      "tokens": 5807
+    },
+    {
+      "conversation_id": "conv_01541",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2416
+    },
+    {
+      "conversation_id": "conv_02103",
+      "desfecho": "cotada",
+      "turnos": 5,
+      "sinteticos": 1,
+      "tokens": 5799
+    },
+    {
+      "conversation_id": "conv_00312",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2400
+    },
+    {
+      "conversation_id": "conv_01394",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2401
+    },
+    {
+      "conversation_id": "conv_00367",
+      "desfecho": "llm_indisponivel",
+      "turnos": 2,
+      "sinteticos": 0,
+      "tokens": 760
+    },
+    {
+      "conversation_id": "conv_02283",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2394
+    },
+    {
+      "conversation_id": "conv_02203",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2390
+    },
+    {
+      "conversation_id": "conv_01196",
+      "desfecho": "llm_indisponivel",
+      "turnos": 4,
+      "sinteticos": 1,
+      "tokens": 2402
+    },
+    {
+      "conversation_id": "conv_01178",
+      "desfecho": "cotada",
+      "turnos": 5,
+      "sinteticos": 2,
+      "tokens": 5861
+    },
+    {
+      "conversation_id": "conv_01873",
+      "desfecho": "cotada",
+      "turnos": 5,
+      "sinteticos": 2,
+      "tokens": 5801
+    },
+    {
+      "conversation_id": "conv_00577",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2407
+    },
+    {
+      "conversation_id": "conv_02365",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2384
+    },
+    {
+      "conversation_id": "conv_01265",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2404
+    },
+    {
+      "conversation_id": "conv_00101",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2393
+    },
+    {
+      "conversation_id": "conv_01510",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2391
+    },
+    {
+      "conversation_id": "conv_01489",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 2,
+      "tokens": 7601
+    },
+    {
+      "conversation_id": "conv_01888",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2391
+    },
+    {
+      "conversation_id": "conv_01729",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2402
+    },
+    {
+      "conversation_id": "conv_00371",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2406
+    },
+    {
+      "conversation_id": "conv_01633",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 1547
+    },
+    {
+      "conversation_id": "conv_02399",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9416
+    },
+    {
+      "conversation_id": "conv_02271",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2382
+    },
+    {
+      "conversation_id": "conv_02041",
+      "desfecho": "indisponibilidade",
+      "turnos": 5,
+      "sinteticos": 2,
+      "tokens": 5832
+    },
+    {
+      "conversation_id": "conv_00476",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2384
+    },
+    {
+      "conversation_id": "conv_01742",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2406
+    },
+    {
+      "conversation_id": "conv_02074",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2402
+    },
+    {
+      "conversation_id": "conv_02458",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2399
+    },
+    {
+      "conversation_id": "conv_02011",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2386
+    },
+    {
+      "conversation_id": "conv_01630",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 2,
+      "tokens": 7647
+    },
+    {
+      "conversation_id": "conv_02148",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2411
+    },
+    {
+      "conversation_id": "conv_01059",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9358
+    },
+    {
+      "conversation_id": "conv_01720",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2397
+    },
+    {
+      "conversation_id": "conv_02310",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2391
+    },
+    {
+      "conversation_id": "conv_01962",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2411
+    },
+    {
+      "conversation_id": "conv_02101",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2386
+    },
+    {
+      "conversation_id": "conv_02121",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2386
+    },
+    {
+      "conversation_id": "conv_00103",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2407
+    },
+    {
+      "conversation_id": "conv_02357",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2424
+    },
+    {
+      "conversation_id": "conv_00919",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2410
+    },
+    {
+      "conversation_id": "conv_00528",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2367
+    },
+    {
+      "conversation_id": "conv_00200",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2406
+    },
+    {
+      "conversation_id": "conv_02143",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2416
+    },
+    {
+      "conversation_id": "conv_01758",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2401
+    },
+    {
+      "conversation_id": "conv_01925",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 2,
+      "tokens": 7592
+    },
+    {
+      "conversation_id": "conv_00583",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2386
+    },
+    {
+      "conversation_id": "conv_01974",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2413
+    },
+    {
+      "conversation_id": "conv_00937",
+      "desfecho": "llm_indisponivel",
+      "turnos": 6,
+      "sinteticos": 1,
+      "tokens": 5904
+    },
+    {
+      "conversation_id": "conv_00499",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9278
+    },
+    {
+      "conversation_id": "conv_01871",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2401
+    },
+    {
+      "conversation_id": "conv_01922",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2404
+    },
+    {
+      "conversation_id": "conv_02234",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9504
+    },
+    {
+      "conversation_id": "conv_01028",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2404
+    },
+    {
+      "conversation_id": "conv_02292",
+      "desfecho": "cotada",
+      "turnos": 5,
+      "sinteticos": 2,
+      "tokens": 5986
+    },
+    {
+      "conversation_id": "conv_01646",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2405
+    },
+    {
+      "conversation_id": "conv_01260",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2407
+    },
+    {
+      "conversation_id": "conv_02245",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2388
+    },
+    {
+      "conversation_id": "conv_02055",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2397
+    },
+    {
+      "conversation_id": "conv_01961",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 2,
+      "tokens": 7606
+    },
+    {
+      "conversation_id": "conv_01773",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2391
+    },
+    {
+      "conversation_id": "conv_00829",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2398
+    },
+    {
+      "conversation_id": "conv_01205",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2424
+    },
+    {
+      "conversation_id": "conv_01101",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9253
+    },
+    {
+      "conversation_id": "conv_00037",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2374
+    },
+    {
+      "conversation_id": "conv_00135",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2391
+    },
+    {
+      "conversation_id": "conv_00613",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2414
+    },
+    {
+      "conversation_id": "conv_02446",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2387
+    },
+    {
+      "conversation_id": "conv_01876",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2403
+    },
+    {
+      "conversation_id": "conv_02141",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 1,
+      "tokens": 7601
+    },
+    {
+      "conversation_id": "conv_02005",
+      "desfecho": "llm_indisponivel",
+      "turnos": 2,
+      "sinteticos": 0,
+      "tokens": 762
+    },
+    {
+      "conversation_id": "conv_01474",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2385
+    },
+    {
+      "conversation_id": "conv_00818",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2384
+    },
+    {
+      "conversation_id": "conv_01065",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2406
+    },
+    {
+      "conversation_id": "conv_01988",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2372
+    },
+    {
+      "conversation_id": "conv_01911",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2409
+    },
+    {
+      "conversation_id": "conv_02094",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2393
+    },
+    {
+      "conversation_id": "conv_02036",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 1,
+      "tokens": 7583
+    },
+    {
+      "conversation_id": "conv_01778",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2376
+    },
+    {
+      "conversation_id": "conv_02284",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9510
+    },
+    {
+      "conversation_id": "conv_00137",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2391
+    },
+    {
+      "conversation_id": "conv_01188",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9443
+    },
+    {
+      "conversation_id": "conv_01297",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2380
+    },
+    {
+      "conversation_id": "conv_01874",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2392
+    },
+    {
+      "conversation_id": "conv_00402",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9408
+    },
+    {
+      "conversation_id": "conv_01795",
+      "desfecho": "cotada",
+      "turnos": 5,
+      "sinteticos": 2,
+      "tokens": 5859
+    },
+    {
+      "conversation_id": "conv_02110",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2389
+    },
+    {
+      "conversation_id": "conv_01060",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2410
+    },
+    {
+      "conversation_id": "conv_01855",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2384
+    },
+    {
+      "conversation_id": "conv_00749",
+      "desfecho": "cotada",
+      "turnos": 5,
+      "sinteticos": 2,
+      "tokens": 5803
+    },
+    {
+      "conversation_id": "conv_01743",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2385
+    },
+    {
+      "conversation_id": "conv_00263",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 2,
+      "tokens": 7651
+    },
+    {
+      "conversation_id": "conv_01091",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2393
+    },
+    {
+      "conversation_id": "conv_01516",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2389
+    },
+    {
+      "conversation_id": "conv_00395",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2393
+    },
+    {
+      "conversation_id": "conv_00797",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2405
+    },
+    {
+      "conversation_id": "conv_01684",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2411
+    },
+    {
+      "conversation_id": "conv_00599",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2383
+    },
+    {
+      "conversation_id": "conv_01840",
+      "desfecho": "cotada",
+      "turnos": 5,
+      "sinteticos": 2,
+      "tokens": 5791
+    },
+    {
+      "conversation_id": "conv_00057",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2410
+    },
+    {
+      "conversation_id": "conv_00377",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2405
+    },
+    {
+      "conversation_id": "conv_00000",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 2,
+      "tokens": 7625
+    },
+    {
+      "conversation_id": "conv_01848",
+      "desfecho": "cotada",
+      "turnos": 5,
+      "sinteticos": 2,
+      "tokens": 5820
+    },
+    {
+      "conversation_id": "conv_02378",
+      "desfecho": "cotada",
+      "turnos": 5,
+      "sinteticos": 1,
+      "tokens": 5821
+    },
+    {
+      "conversation_id": "conv_02238",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2384
+    },
+    {
+      "conversation_id": "conv_00340",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9472
+    },
+    {
+      "conversation_id": "conv_02499",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2395
+    },
+    {
+      "conversation_id": "conv_00814",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2380
+    },
+    {
+      "conversation_id": "conv_01015",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 1,
+      "tokens": 7527
+    },
+    {
+      "conversation_id": "conv_00494",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2389
+    },
+    {
+      "conversation_id": "conv_00182",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9326
+    },
+    {
+      "conversation_id": "conv_01099",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2406
+    },
+    {
+      "conversation_id": "conv_01463",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 2,
+      "tokens": 7634
+    },
+    {
+      "conversation_id": "conv_00633",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2416
+    },
+    {
+      "conversation_id": "conv_00021",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2395
+    },
+    {
+      "conversation_id": "conv_01283",
+      "desfecho": "cotada",
+      "turnos": 6,
+      "sinteticos": 2,
+      "tokens": 7630
+    },
+    {
+      "conversation_id": "conv_02388",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2387
+    },
+    {
+      "conversation_id": "conv_02352",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2390
+    },
+    {
+      "conversation_id": "conv_02015",
+      "desfecho": "cotada",
+      "turnos": 7,
+      "sinteticos": 2,
+      "tokens": 9349
+    },
+    {
+      "conversation_id": "conv_00552",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2386
+    },
+    {
+      "conversation_id": "conv_02235",
+      "desfecho": "recusa_regra",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2394
+    },
+    {
+      "conversation_id": "conv_00913",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2374
+    },
+    {
+      "conversation_id": "conv_01937",
+      "desfecho": "midia",
+      "turnos": 3,
+      "sinteticos": 0,
+      "tokens": 2566
+    }
+  ]
+}

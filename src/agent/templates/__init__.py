@@ -4,8 +4,33 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from domain.objection import Objecao
 from domain.product import ProductFacts
 from domain.quote import Declined, Quote, QuoteContractError
+
+# Referência escrita por categoria; sem valor e sem promessa de prazo.
+_OBJECTIONS = {
+    Objecao.CARO_PARA_O_CARRO: (
+        "Entendo. Posso comparar com um plano de cobertura mais enxuta para o seu carro."
+    ),
+    Objecao.FRANQUIA_ALTA: (
+        "Entendo a preocupação com a franquia. "
+        "Posso mostrar as condições de outro plano para você comparar."
+    ),
+    Objecao.PRECO_ALTO: (
+        "Entendo que o valor pesou. Posso apresentar um plano com menos coberturas para comparar."
+    ),
+    Objecao.CONCORRENTE_MAIS_BARATO: (
+        "Faz sentido comparar. Vale conferir se a outra proposta tem as mesmas coberturas "
+        "e a mesma carência."
+    ),
+    Objecao.CONSULTAR_FAMILIA: (
+        "Claro, converse com calma. Quando quiser seguir, é só responder aqui."
+    ),
+    Objecao.PRECISA_PENSAR: (
+        "Sem pressa. Quando quiser, retomamos daqui com os dados que você já passou."
+    ),
+}
 
 _COVERAGES = {
     "colisao": "colisão",
@@ -40,6 +65,10 @@ def _coverage_list(codes: tuple[str, ...]) -> str:
     if not names:
         raise QuoteContractError("Coberturas ausentes")
     return _listing(names)
+
+
+def render_objection(objecao: Objecao) -> str:
+    return _OBJECTIONS[objecao]
 
 
 def render_safe_reply(products: tuple[ProductFacts, ...]) -> str:

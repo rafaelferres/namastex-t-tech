@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -12,6 +13,7 @@ from agent.prompts.converser import CONVERSER_PROMPT
 from agent.templates import render_safe_reply
 from application.llm import LLMClient, LLMContractError, LLMRequest, LLMRole, LLMTool
 from domain.handoff import HandoffReason
+from domain.objection import Objecao
 from domain.product import ProductFacts
 from domain.quote import Declined, Quote, QuoteOutcome, QuoteUnavailable
 from infrastructure.privacy import PrivacyRedactor
@@ -30,6 +32,8 @@ class ConversationOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
     texto: str
     escalacao: HandoffReason | None
+    # Obrigatório no schema strict; roteia para o nó de objeção junto com o piso lexical.
+    objecao: Objecao | Literal["nenhuma"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +43,7 @@ class ConversationResult:
     plano_id: str | None = None
     # Fala do modelo descartada pelo guardrail, já redigida; o grafo registra no trace.
     violacao: str | None = None
+    objecao: Objecao | None = None
 
 
 def project_quote(
@@ -146,8 +151,12 @@ class Converser:
         except ValidationError:
             raise LLMContractError() from None
         text = self._privacy.redact(parsed.texto)
+        objection = parsed.objecao if isinstance(parsed.objecao, Objecao) else None
         if contains_money(text):
             return ConversationResult(
-                render_safe_reply(context.produtos), parsed.escalacao, violacao=text
+                render_safe_reply(context.produtos),
+                parsed.escalacao,
+                violacao=text,
+                objecao=objection,
             )
-        return ConversationResult(text, parsed.escalacao)
+        return ConversationResult(text, parsed.escalacao, objecao=objection)

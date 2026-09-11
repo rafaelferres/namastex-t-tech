@@ -477,10 +477,80 @@ QUOTE_FAILURE_RATE=1.0 docker compose up   # força a escada até o N3
 
 ### Resultados
 
+Duas métricas diferentes, medidas separadamente. Na tarefa 8 elas se misturaram e
+produziram um número enganoso (ver abaixo).
+
+#### Acurácia de extração — isolada, sem cotação
+
+Só o extrator: sem cotação, sem grafo, sem orçamento de turno. As rajadas do lead
+entram em ordem, os slots acumulam, e o gabarito nunca entra no contexto. 2.500
+conversas, capturas versionadas em `tests/fixtures/llm-isolated/`.
+
+| Modelo | Idade | Ano-modelo | Mediana / p95 por chamada | Custo |
+|---|---:|---:|---:|---:|
+| gpt-4.1-mini — **em uso** | **99,96%** (2.499/2.500) | **100%** (2.500/2.500) | 1.482 / 2.268 ms | US$ 2,86 |
+| gpt-4.1-nano — **rejeitado** | 89,32% | 97,88% | 1.465 / 2.666 ms | US$ 0,78 |
+
+O nano perde 10 pontos em idade e **não melhora a latência**: o tempo é a ida até o
+OpenRouter, não a inferência. O ganho de orçamento tinha de vir do turno, não da
+troca de modelo.
+
+Os 88,48% (idade) e 93,88% (ano) da tarefa 8 mediam outra coisa. A extração rodava
+sob o corte de 2 s por chamada, e 288 conversas eram interrompidas antes de chegar à
+idade; nas 2.212 concluídas, os dois campos estavam corretos. Era gradiente de
+progresso na conversa, não acurácia.
+
+#### Taxa de conclusão fim a fim — sob a instabilidade real
+
+Agente inteiro: ingestão, extrator e conversador reais, cadeia de cotação real contra
+a API local com `QUOTE_SEED=42`, 20% de falha e 10% de lentidão. 150 conversas do
+dataset sorteadas com seed 2026. Concluída = chegou a apresentar cotação.
+
+| Desfecho | Antes (6 s, LLM 2,0/2,5 s, 4.000 tokens) | Depois (10 s, LLM 4,5 s, 16.000 tokens) |
+|---|---:|---:|
+| **Cotada** | **0 (0%)** | **38 (25,3%)** |
+| Recusa por regra de aceitação | 42 (28,0%) | 44 (29,3%) |
+| Mídia sem resolução (documento, imagem, áudio) | 62 (41,3%) | 63 (42,0%) |
+| Limite de tokens da conversa | 27 (18,0%) | 0 |
+| LLM cortado ou indisponível | 19 (12,7%) | 4 (2,7%) |
+| Cotação indisponível após a escada | 0 | 1 (0,7%) |
+| Prazo do turno | 0 | 0 |
+
+- Das 105 conversas elegíveis, 63 escalam por mídia antes de cotar — resolução de
+  mídia é fase própria. Entre as **42 elegíveis sem mídia, 38 cotaram (90,5%)**.
+- Todas as recusas são de leads inelegíveis pelo oráculo, e nenhum inelegível recebeu
+  cotação, nos dois cenários.
+- No "antes", o prazo não aparecia como prazo do turno: aparecia como chamada de LLM
+  cortada em 2–2,5 s e como estouro de 4.000 tokens, que o conversador ultrapassava já
+  na primeira fala.
+- O dataset não tem data de vigência. O harness a responde quando o agente pede e,
+  se a conversa termina sem cotação, pede o plano Completo: 74 dos 573 turnos do
+  "depois" são sintéticos.
+- Objeções: nas 20 conversas em que uma objeção chegou ao agente, as 20 foram ao nó
+  de objeção, todas classificadas pelo modelo. Sobre o dataset inteiro, o roteador
+  antigo levava ao nó 220 das 1.295 conversas com objeção; o piso lexical novo, 1.295.
+
+#### Onde o tempo do turno vai
+
+Cenário "depois", 573 turnos:
+
+| Etapa | p50 | p95 | p99 | Teto |
+|---|---:|---:|---:|---:|
+| Extração (todo turno) | 1,66 s | 2,61 s | 3,48 s | 3,5 s |
+| Fala do conversador (123 turnos) | 1,65 s | 3,08 s | 4,08 s | 4,5 s |
+| Cotação (39 turnos) | 70 ms | 2,05 s | 2,17 s | 3,5 s |
+| Política | 2 ms | 4 ms | 12 ms | — |
+| **Turno inteiro** | **1,68 s** | **4,42 s** | **5,54 s** | **10 s** |
+
+Nenhum turno passou de 8 s; dois passaram de 6 s. Espera percebida pelo lead, com a
+janela de rajada de 500 ms: p50 2,25 s, p95 4,99 s, máximo 7,31 s. Medições brutas em
+`docs/measurements/task9-e2e-{medicao,antes,depois}.json`. Reprodução, com a API local
+em `:18010`: `uv run --env-file .env python -m scripts.measure_end_to_end --scenario depois`.
+
+#### Ainda a medir
+
 | Métrica | Baseline humana | Agente |
 |---|---|---|
-| Extração de idade (2.500 casos) | — | 88,48% (2.212/2.500) |
-| Extração de ano do veículo | — | 93,88% (2.347/2.500) |
 | Recusas corretas (751 casos) | 0 / 751 | `<preencher>` |
 | Cotações consistentes com a tabela | 0 / 2.500 | `<preencher>` |
 | Menção de carência quando aplicável | 0 / 2.500 | `<preencher>` |
@@ -677,6 +747,11 @@ O modo importlib reduziu a coleta de 4,34 s para 3,61 s sem remover testes.
 
 
 ### Extração estruturada e cliente LLM (tarefa 8)
+
+> Registro histórico. Os números desta seção foram medidos sob o orçamento antigo
+> (2 s por chamada, 4.000 tokens) e misturam progresso na conversa com acurácia.
+> A acurácia isolada, a taxa de conclusão fim a fim e o nano medido nos 2.500 casos
+> estão em [Resultados](#resultados) (tarefa 9, D-034).
 
 Workspace ativo: `/home/rafael/namastex-test-tecnico`; original em `/mnt/c`
 preservado. Os mesmos 381 testes caíram de 7,79 s para 1,61 s após a migração.
