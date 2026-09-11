@@ -20,6 +20,7 @@ from application.llm import (
     LLMRequest,
     LLMResponse,
     LLMRole,
+    LLMToolCall,
     LLMUnavailable,
 )
 from application.ports import Clock, SystemClock
@@ -63,11 +64,14 @@ class RecordedLLMClient:
     async def complete(self, request: LLMRequest) -> LLMResponse:
         position = self._positions.get(request.conversation_id, 0)
         self._positions[request.conversation_id] = position + 1
+        canonical = asdict(request)
+        if not request.tools:
+            canonical.pop("tools")
         data = {
             "version": 1,
             "position": position,
             "model": self._models[request.role],
-            "request": asdict(request),
+            "request": canonical,
             "settings": self._settings,
         }
         digest = hashlib.sha256(
@@ -99,7 +103,19 @@ class RecordedLLMClient:
                 error.latency_ms = (self._clock.monotonic() - start) * 1000
                 self._save(path, {"digest": digest, "error": kind, "latency_ms": error.latency_ms})
                 raise
-            safe = replace(response, content=self._privacy.redact(response.content))
+            safe = replace(
+                response,
+                content=self._privacy.redact(response.content),
+                tool_calls=tuple(
+                    LLMToolCall(
+                        self._privacy.redact(call.name),
+                        json.loads(
+                            self._privacy.redact(json.dumps(call.arguments, ensure_ascii=False))
+                        ),
+                    )
+                    for call in response.tool_calls
+                ),
+            )
             payload = asdict(safe)
             payload["cost"] = str(safe.cost) if safe.cost is not None else None
             self._save(path, {"digest": digest, "response": payload})
@@ -154,6 +170,22 @@ class RecordedLLMClient:
                 item["completion_tokens"],
                 cost,
                 latency,
+                self._load_tools(item.get("tool_calls", [])),
             )
         except (KeyError, TypeError, ValueError, ArithmeticError, OSError):
             raise LLMFixtureInvalid() from None
+
+    @staticmethod
+    def _load_tools(value: object) -> tuple[LLMToolCall, ...]:
+        if not isinstance(value, list):
+            raise ValueError("tools")
+        calls = []
+        for item in value:
+            if (
+                not isinstance(item, dict)
+                or not isinstance(item.get("name"), str)
+                or not isinstance(item.get("arguments"), dict)
+            ):
+                raise ValueError("tools")
+            calls.append(LLMToolCall(item["name"], item["arguments"]))
+        return tuple(calls)

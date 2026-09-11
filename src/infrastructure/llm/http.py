@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 from decimal import Decimal
 
 import httpx
 
-from application.llm import LLMContractError, LLMRequest, LLMResponse, LLMUnavailable
+from application.llm import LLMContractError, LLMRequest, LLMResponse, LLMToolCall, LLMUnavailable
 from application.ports import Clock
 from infrastructure.llm.config import LLMConfig
 
@@ -42,6 +43,25 @@ class OpenRouterLLMClient:
                             },
                         },
                         "provider": {"require_parameters": True},
+                        **(
+                            {
+                                "tools": [
+                                    {
+                                        "type": "function",
+                                        "function": {
+                                            "name": tool.name,
+                                            "description": tool.description,
+                                            "parameters": tool.parameters,
+                                            "strict": True,
+                                        },
+                                    }
+                                    for tool in request.tools
+                                ],
+                                "parallel_tool_calls": False,
+                            }
+                            if request.tools
+                            else {}
+                        ),
                     },
                     timeout=min(self._config.timeout_seconds, budget),
                     follow_redirects=False,
@@ -55,7 +75,13 @@ class OpenRouterLLMClient:
         try:
             body = response.json(parse_float=Decimal)
             usage = body["usage"]
-            content = body["choices"][0]["message"]["content"]
+            message = body["choices"][0]["message"]
+            content = message.get("content")
+            calls = parse_tool_calls(message.get("tool_calls", []))
+            if content is None and calls:
+                content = ""
+            if calls and not request.tools:
+                raise ValueError
             model = body["model"]
             prompt_tokens = usage["prompt_tokens"]
             completion_tokens = usage["completion_tokens"]
@@ -85,4 +111,26 @@ class OpenRouterLLMClient:
             completion_tokens,
             cost,
             (self._clock.monotonic() - start) * 1000,
+            calls,
         )
+
+
+def parse_tool_calls(value: object) -> tuple[LLMToolCall, ...]:
+    """Validate provider tool envelopes without exposing their contents in errors."""
+    if not isinstance(value, list):
+        raise ValueError("tool envelope")
+    result = []
+    for item in value:
+        if not isinstance(item, dict) or item.get("type") != "function":
+            raise ValueError("tool envelope")
+        function = item.get("function")
+        if not isinstance(function, dict) or not isinstance(function.get("name"), str):
+            raise ValueError("tool envelope")
+        arguments = function.get("arguments")
+        if not isinstance(arguments, str):
+            raise ValueError("tool arguments")
+        parsed = json.loads(arguments)
+        if not isinstance(parsed, dict):
+            raise ValueError("tool arguments")
+        result.append(LLMToolCall(function["name"], parsed))
+    return tuple(result)

@@ -14,6 +14,19 @@ class LLMRole(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class LLMTool:
+    name: str
+    description: str
+    parameters: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class LLMToolCall:
+    name: str
+    arguments: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
 class LLMRequest:
     conversation_id: str
     role: LLMRole
@@ -21,6 +34,7 @@ class LLMRequest:
     user: str
     schema: dict[str, object]
     budget: float
+    tools: tuple[LLMTool, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +45,7 @@ class LLMResponse:
     completion_tokens: int
     cost: Decimal | None
     latency_ms: float
+    tool_calls: tuple[LLMToolCall, ...] = ()
 
 
 class LLMUnavailable(Exception):
