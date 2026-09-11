@@ -227,3 +227,17 @@ async def test_fixture_errors_remain_distinguishable_for_fail_fast(missing: bool
             "oi", Slots(), conversation_id="conv"
         )
     assert caught.value is error
+
+
+@pytest.mark.asyncio
+async def test_uncertain_without_candidate_does_not_erase_collected_year():
+    client = FakeClient(json.dumps({
+        "idade": informed(80),
+        "veiculo_ano": {"valor": None, "status": "incerto", "proveniencia": "digitado"},
+    }))
+    previous = Slots.model_validate({"veiculo_ano": informed(2003)})
+    result = await SlotExtractor(client, PrivacyRedactor()).extract(
+        "Tenho 80 anos", previous, conversation_id="conv"
+    )
+    assert result.slots.veiculo_ano == previous.veiculo_ano
+    assert result.slots.idade.valor == 80

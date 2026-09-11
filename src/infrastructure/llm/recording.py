@@ -22,6 +22,8 @@ from application.llm import (
     LLMRole,
     LLMUnavailable,
 )
+from application.ports import Clock, SystemClock
+from infrastructure.llm.budget import budget_expired
 from infrastructure.privacy import PrivacyRedactor
 
 
@@ -44,9 +46,11 @@ class RecordedLLMClient:
         models: Mapping[LLMRole, str],
         *,
         settings: Mapping[str, object] | None = None,
+        clock: Clock | None = None,
     ) -> None:
         if mode not in ("record", "replay") or (mode == "record" and inner is None):
             raise ValueError("Modo de captura LLM inválido")
+        self._clock = clock or SystemClock()
         self._inner = inner
         self._directory = directory
         self._mode = mode
@@ -77,11 +81,23 @@ class RecordedLLMClient:
                 raise LLMFixtureMissing(digest)
             if self._inner is None:
                 raise LLMContractError()
+            start = self._clock.monotonic()
             try:
                 response = await self._inner.complete(request)
+            except asyncio.CancelledError:
+                # The outer budget cancels this await before translating to unavailable.
+                # External cancellation remains an interrupted recording, never a fake failure.
+                if budget_expired():
+                    latency = (self._clock.monotonic() - start) * 1000
+                    self._save(
+                        path, {"digest": digest, "error": "unavailable", "latency_ms": latency}
+                    )
+                    raise LLMUnavailable(latency_ms=latency) from None
+                raise
             except (LLMUnavailable, LLMContractError) as error:
                 kind = "unavailable" if isinstance(error, LLMUnavailable) else "contract_error"
-                self._save(path, {"digest": digest, "error": kind})
+                error.latency_ms = (self._clock.monotonic() - start) * 1000
+                self._save(path, {"digest": digest, "error": kind, "latency_ms": error.latency_ms})
                 raise
             safe = replace(response, content=self._privacy.redact(response.content))
             payload = asdict(safe)
@@ -108,10 +124,15 @@ class RecordedLLMClient:
             data = json.loads(path.read_text())
             if data["digest"] != digest:
                 raise ValueError("digest")
+            failure_latency = data.get("latency_ms")
+            if failure_latency is not None:
+                failure_latency = float(failure_latency)
+                if not math.isfinite(failure_latency) or failure_latency < 0:
+                    raise ValueError("latency")
             if data.get("error") == "unavailable":
-                raise LLMUnavailable()
+                raise LLMUnavailable(latency_ms=failure_latency)
             if data.get("error") == "contract_error":
-                raise LLMContractError()
+                raise LLMContractError(latency_ms=failure_latency)
             item = data["response"]
             if not isinstance(item["content"], str) or not isinstance(item["model"], str):
                 raise ValueError("text")

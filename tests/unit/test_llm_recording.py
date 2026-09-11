@@ -86,3 +86,74 @@ async def test_corrupt_fixture_fails_clearly(tmp_path):
     next(tmp_path.glob("*.json")).write_text("not JSON")
     with pytest.raises(LLMFixtureInvalid, match="Fixture LLM inválida"):
         await RecordedLLMClient(None, tmp_path, "replay", models).complete(request())
+
+
+@pytest.mark.asyncio
+async def test_budget_timeout_is_recorded_for_offline_replay(tmp_path):
+    import asyncio
+    from dataclasses import replace
+
+    from application.llm import LLMUnavailable
+    from infrastructure.llm.budget import BudgetedLLMClient
+
+    class Pending:
+        async def complete(self, request):
+            await asyncio.Event().wait()
+
+    models = {LLMRole.EXTRACTOR: "model"}
+    req = replace(request(), budget=0)
+    recording = RecordedLLMClient(Pending(), tmp_path, "record", models)
+    with pytest.raises(LLMUnavailable):
+        await BudgetedLLMClient(recording).complete(req)
+    with pytest.raises(LLMUnavailable):
+        await RecordedLLMClient(None, tmp_path, "replay", models).complete(req)
+
+
+@pytest.mark.asyncio
+async def test_external_cancellation_does_not_create_false_unavailable_capture(tmp_path):
+    import asyncio
+
+    from infrastructure.llm.budget import BudgetedLLMClient
+
+    entered = asyncio.Event()
+
+    class Pending:
+        async def complete(self, request):
+            entered.set()
+            await asyncio.Event().wait()
+
+    client = BudgetedLLMClient(
+        RecordedLLMClient(Pending(), tmp_path, "record", {LLMRole.EXTRACTOR: "model"})
+    )
+    task = asyncio.create_task(client.complete(request()))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not list(tmp_path.glob("*.json"))
+
+
+@pytest.mark.asyncio
+async def test_failure_latency_survives_record_replay(tmp_path):
+    from application.llm import LLMUnavailable
+
+    class Clock:
+        value = 0.0
+
+        def monotonic(self):
+            return self.value
+
+    clock = Clock()
+
+    class Failing:
+        async def complete(self, request):
+            clock.value = 2.5
+            raise LLMUnavailable()
+
+    models = {LLMRole.EXTRACTOR: "model"}
+    recording = RecordedLLMClient(Failing(), tmp_path, "record", models, clock=clock)
+    with pytest.raises(LLMUnavailable) as live:
+        await recording.complete(request())
+    with pytest.raises(LLMUnavailable) as replay:
+        await RecordedLLMClient(None, tmp_path, "replay", models).complete(request())
+    assert live.value.latency_ms == replay.value.latency_ms == 2500

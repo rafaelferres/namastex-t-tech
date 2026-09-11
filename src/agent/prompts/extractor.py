@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# Provisório: versão inicial, sem a sessão dedicada de redação.
 EXTRACTOR_PROMPT = """Extraia somente informações explicitamente presentes na mensagem atual.
 Retorne JSON com plano_id, idade, veiculo_ano, cep e data_inicio; ausência é null.
 Cada informação presente contém valor, status (informado ou incerto) e

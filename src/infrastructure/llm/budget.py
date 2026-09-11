@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar
 
 from application.llm import LLMClient, LLMRequest, LLMResponse, LLMUnavailable, TokenBudgetExceeded
+
+_active_deadline: ContextVar[asyncio.Timeout | None] = ContextVar("llm_deadline", default=None)
+
+
+def budget_expired() -> bool:
+    deadline = _active_deadline.get()
+    return deadline is not None and deadline.expired()
 
 
 class BudgetedLLMClient:
@@ -23,19 +31,23 @@ class BudgetedLLMClient:
         conversation_id = request.conversation_id
         lock = self._locks.setdefault(conversation_id, asyncio.Lock())
         try:
-            async with asyncio.timeout(request.budget):
-                async with lock:
-                    if self.tokens_used(conversation_id) >= self._token_limit:
-                        raise TokenBudgetExceeded()
-                    response = await self._inner.complete(request)
-                    used = (
-                        self.tokens_used(conversation_id)
-                        + response.prompt_tokens
-                        + response.completion_tokens
-                    )
-                    self._used[conversation_id] = used
-                    if used > self._token_limit:
-                        raise TokenBudgetExceeded()
-                    return response
+            async with asyncio.timeout(request.budget) as deadline:
+                token = _active_deadline.set(deadline)
+                try:
+                    async with lock:
+                        if self.tokens_used(conversation_id) >= self._token_limit:
+                            raise TokenBudgetExceeded()
+                        response = await self._inner.complete(request)
+                        used = (
+                            self.tokens_used(conversation_id)
+                            + response.prompt_tokens
+                            + response.completion_tokens
+                        )
+                        self._used[conversation_id] = used
+                        if used > self._token_limit:
+                            raise TokenBudgetExceeded()
+                        return response
+                finally:
+                    _active_deadline.reset(token)
         except TimeoutError:
             raise LLMUnavailable() from None

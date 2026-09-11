@@ -4,30 +4,37 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
-### Added — Tarefa 8, implementação offline, 2026-09-11
+### Added — Tarefa 8, 2026-09-11
 
-- Cliente OpenRouter com modelos por papel, saída estruturada, timeout/orçamento
-  e sinal determinístico de escalação por limite de tokens da conversa.
+- Cliente OpenRouter por papel, schema Pydantic, timeout/orçamento e sinal
+  determinístico de escalação por limite de tokens da conversa.
 - Extrator isolado com prompt provisório, proveniência, ausência/incerteza,
-  CEP privado preservado mesmo em falha e ano-modelo futuro intacto.
-- Capturas imutáveis e replay sem fallback para rede; harness reporta acurácia,
-  custo conhecido, latência e erros por formato. Avaliação real continua pendente
-  de OPENROUTER_API_KEY: nenhuma fixture ou acurácia foi fabricada.
-- .env.example sem credenciais; .env ignorado. Varredura dos 15 commits locais
-  não encontrou padrões de chave OpenRouter/OpenAI; isso não prova ausência de
-  todo segredo possível.
+  CEP privado e ano-modelo futuro intacto. Atualização incerta sem candidato
+  preserva valores já coletados.
+- 7.298 capturas reais dos 2.500 casos, gabaritos redigidos e replay offline:
+  **idade 88,48% (2.212/2.500), ano 93,88% (2.347/2.500)**. Pisos de regressão
+  de 88%/93%, explicitamente separados de SLO de produção.
+- Nas 2.212 conversas concluídas, ambos os campos ficaram corretos; 288 (11,52%)
+  tiveram indisponibilidade/prazo. Custo conhecido US$ 2,6678412; total estimado
+  US$ 2,777447. Mediana/p95: 1.575,94/2.346,20 ms, incluindo falhas.
+- Piloto nano em 24 casos preservado separadamente: não justificou trocar o mini;
+  acrescentou US$ 0,0068511 conhecidos. Nenhuma captura foi fabricada.
+- .env.example sem credenciais; .env ignorado. Auditoria final de 7.381 arquivos
+  JSON não encontrou a chave nem PII reconhecida pelo redator. CEP privado
+  recuperado em 2.500/2.500 conversas, sem perda de zero inicial.
 
 ### Changed — Tarefa 8
 
 - Workspace migrado para /home/rafael/namastex-test-tecnico; original preservado.
   Mesmos 381 testes: 7,79 s em /mnt/c e 1,61 s no Linux.
-- Validação integrada: **448 passed, 11 deselected in 1.56s** no loop rápido;
-  **458 passed, 1 deselected in 9.26s** incluindo estatística/corpus, excluindo eval.
-  Ruff limpo e mypy estrito limpo em 57 arquivos. Auditoria privada recuperou
-  2.500/2.500 CEPs como string, sem perda de zero inicial.
-- Portão eval executado: falha explícita por ausência de capturas reais. Ainda
-  faltam medição de qualidade/custo/latência, limiares e replay real verde para
-  considerar a tarefa concluída.
+- Timeout do budget agora é gravado com latência; cancelamento externo continua
+  interrupção. Corrigida por TDD a perda de ano por incerto sem candidato,
+  revelada em conv_00748; relatórios anteriores preservados para comparação.
+- Validação final: **453 passed, 11 deselected in 2.22s** no loop rápido;
+  **1 passed, 463 deselected in 20.96s** em eval por replay sem rede;
+  **464 passed in 25.98s** na suíte completa. Ruff e mypy limpos (57 arquivos).
+- A indisponibilidade de 11,52% ainda exige calibração antes de produção; os
+  limites de tempo foram mantidos para expor a qualidade efetiva desta configuração.
 
 ### Added — Tarefa 7, 2026-09-11
 

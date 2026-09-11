@@ -34,13 +34,15 @@ class LLMResponse:
 
 
 class LLMUnavailable(Exception):
-    def __init__(self) -> None:
+    def __init__(self, *, latency_ms: float | None = None) -> None:
         super().__init__("Serviço LLM indisponível")
+        self.latency_ms = latency_ms
 
 
 class LLMContractError(Exception):
-    def __init__(self) -> None:
+    def __init__(self, *, latency_ms: float | None = None) -> None:
         super().__init__("Resposta LLM fora do contrato")
+        self.latency_ms = latency_ms
 
 
 class TokenBudgetExceeded(Exception):

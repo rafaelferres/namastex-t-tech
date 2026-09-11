@@ -13,7 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 from statistics import median
 
-from application.llm import LLMClient, LLMRequest, LLMResponse
+from application.llm import LLMClient, LLMContractError, LLMRequest, LLMResponse, LLMUnavailable
 from infrastructure.privacy import PrivacyRedactor
 
 
@@ -210,7 +210,7 @@ async def evaluate_cases(
         idade_correct=age,
         ano_correct=year,
         failures=failures,
-        latencies=[item.latency_ms for item in observed.responses],
+        latencies=observed.latencies,
         prompt_tokens=sum(item.prompt_tokens for item in observed.responses),
         completion_tokens=sum(item.completion_tokens for item in observed.responses),
         costs=[item.cost for item in observed.responses],
@@ -219,6 +219,7 @@ async def evaluate_cases(
     )
     report["responses_with_usage"] = len(observed.responses)
     report["calls"] = observed.calls
+    report["calls_with_latency"] = len(observed.latencies)
     report["provider_error_cases"] = provider_errors
     if observed.calls != len(observed.responses):
         report["cost_complete"] = False
@@ -229,12 +230,20 @@ class _ObservedClient:
     def __init__(self, inner: LLMClient) -> None:
         self.inner = inner
         self.responses: list[LLMResponse] = []
+        self.latencies: list[float] = []
         self.cep_integer_responses = 0
         self.calls = 0
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         self.calls += 1
-        response = await self.inner.complete(request)
+        try:
+            response = await self.inner.complete(request)
+        except (LLMUnavailable, LLMContractError) as error:
+            latency = getattr(error, "latency_ms", None)
+            if latency is not None:
+                self.latencies.append(latency)
+            raise
+        self.latencies.append(response.latency_ms)
         self.responses.append(response)
         try:
             payload = json.loads(response.content)

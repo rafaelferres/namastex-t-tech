@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "source": "real_recording",
+  "config": {
+    "extractor_model": "openai/gpt-4.1-nano",
+    "conversation_model": "openai/gpt-4.1",
+    "timeout_seconds": 2.0,
+    "budget_seconds": 2.5,
+    "conversation_token_limit": 4000
+  },
+  "private_cep_audit": {
+    "total": 24,
+    "correct": 24,
+    "missing": 0,
+    "integer": 0,
+    "leading_zero_lost": 0,
+    "scope": "Captura determin\u00edstica privada sobre corpus original antes da reda\u00e7\u00e3o"
+  },
+  "case_count": 24
+}

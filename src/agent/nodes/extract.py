@@ -150,6 +150,9 @@ class SlotExtractor:
         for name, value in extracted.model_dump(mode="json").items():
             if name == "cep" or value is None:
                 continue
+            previous = merged[name]
+            if value["valor"] is None and previous is not None and previous["valor"] is not None:
+                continue
             value["proveniencia"] = proveniencia
             if proveniencia == "transcrito":
                 value["status"] = "incerto"

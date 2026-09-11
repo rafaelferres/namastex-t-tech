@@ -40,3 +40,11 @@ Implementação e revisão concluídas; 448 testes rápidos verdes em 1,56 s,
 458 não-eval em 9,26 s. Ruff/mypy limpos. Avaliação real, capturas e limiares
 permanecem bloqueados pela ausência de OPENROUTER_API_KEY. Não marcar tarefa
 completa até medir e reproduzir os 2.500 casos.
+
+## Avaliação concluída
+
+Credencial configurada localmente; 2.500 conversas gravadas e reproduzidas offline.
+453 testes rápidos verdes em 2,22 s, eval verde em 20,96 s e 464 testes completos
+em 25,98 s. Ruff/mypy limpos. README e decisões registram 88,48%/93,88%, custos,
+latências e limiares. Não há pendência de credencial/capturas; permanece a
+limitação operacional de 11,52% de conversas interrompidas nesta configuração.

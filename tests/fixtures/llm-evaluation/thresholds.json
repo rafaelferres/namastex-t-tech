@@ -1,0 +1,8 @@
+{
+  "source": "measured_real_recording",
+  "idade_accuracy": 0.88,
+  "veiculo_ano_accuracy": 0.93,
+  "measured_idade_accuracy": 0.8848,
+  "measured_veiculo_ano_accuracy": 0.9388,
+  "rationale": "Pisos inteiros imediatamente abaixo do observado; proteção de regressão das capturas, não SLO de produção."
+}

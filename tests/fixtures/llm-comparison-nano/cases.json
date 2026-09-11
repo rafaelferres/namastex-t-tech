@@ -1,0 +1,298 @@
+[
+  {
+    "conversation_id": "conv_00000",
+    "turns": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Toyota Corolla 2008",
+      "Tenho 35 anos, cep [CEP], cpf [CPF]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\nqualquer coisa me chama",
+      "fechado!"
+    ],
+    "idade": 35,
+    "veiculo_ano": 2008,
+    "formato": "marca_modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00001",
+    "turns": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Sandero, ano 2022",
+      "Cep [CEP], cpf [CPF], tenho 30 anos\nqualquer coisa me chama",
+      "vamos nessa, gostei"
+    ],
+    "idade": 30,
+    "veiculo_ano": 2022,
+    "formato": "modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00002",
+    "turns": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Pulse, ano 2008",
+      "Tenho 55 anos, cpf [CPF], cep [CEP]\n[documento] CNH_frente.pdf\n[imagem] foto do veiculo na garagem\n[audio] mensagem de voz (18s)\na placa é [PLACA] se precisar",
+      "preciso pensar... a SulAmerica me ofereceu menos",
+      "nao precisa, obrigado"
+    ],
+    "idade": 55,
+    "veiculo_ano": 2008,
+    "formato": "modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00003",
+    "turns": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "e um Corolla 2010",
+      "Cep [CEP], tenho 61 anos, cpf [CPF]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\nto no aguardo",
+      "achei caro pra esse carro... a Porto Seguro me ofereceu menos",
+      "vou ficar com a outra"
+    ],
+    "idade": 61,
+    "veiculo_ano": 2010,
+    "formato": "e_um_modelo"
+  },
+  {
+    "conversation_id": "conv_00004",
+    "turns": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "HB20, ano 2019",
+      "Tenho 22 anos, cpf [CPF], cep [CEP]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\nto no aguardo",
+      "a franquia ta alta... a Bradesco Auto me ofereceu menos",
+      "vou ficar com a outra"
+    ],
+    "idade": 22,
+    "veiculo_ano": 2019,
+    "formato": "modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00005",
+    "turns": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Renault Duster 2011",
+      "Tenho 50 anos, cep [CEP], cpf [CPF]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\n[documento] CNH_frente.pdf\nqualquer coisa me chama"
+    ],
+    "idade": 50,
+    "veiculo_ano": 2011,
+    "formato": "marca_modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00006",
+    "turns": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Toyota Corolla Cross 2007",
+      "Tenho 73 anos, cep [CEP], cpf [CPF]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\nto no aguardo",
+      "vi mais barato na concorrente... a Itau Auto me ofereceu menos",
+      "nao precisa, obrigado"
+    ],
+    "idade": 73,
+    "veiculo_ano": 2007,
+    "formato": "marca_modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00007",
+    "turns": [
+      "Boa tarde, quero uma cotacao",
+      "Tracker, ano 2018",
+      "Cpf [CPF], cep [CEP], tenho 24 anos\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\nqualquer coisa me chama",
+      "preciso pensar",
+      "pode mandar sim"
+    ],
+    "idade": 24,
+    "veiculo_ano": 2018,
+    "formato": "modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00008",
+    "turns": [
+      "Boa tarde, quero uma cotacao",
+      "Honda HR-V 2008",
+      "Cpf [CPF], tenho 78 anos, cep [CEP]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\n[audio] mensagem de voz (18s)\nto no aguardo"
+    ],
+    "idade": 78,
+    "veiculo_ano": 2008,
+    "formato": "marca_modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00009",
+    "turns": [
+      "Ola! Vi o anuncio de voces, quanto fica o seguro?",
+      "e um HB20 2018",
+      "Tenho 50 anos, cpf [CPF], cep [CEP]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\n[audio] mensagem de voz (18s)\nto no aguardo",
+      "preciso pensar",
+      "pode mandar sim"
+    ],
+    "idade": 50,
+    "veiculo_ano": 2018,
+    "formato": "e_um_modelo"
+  },
+  {
+    "conversation_id": "conv_00010",
+    "turns": [
+      "Boa tarde, quero uma cotacao",
+      "City, ano 2002",
+      "Cpf [CPF], cep [CEP], tenho 35 anos\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\n[documento] CNH_frente.pdf\nto no aguardo",
+      "vamos nessa, gostei"
+    ],
+    "idade": 35,
+    "veiculo_ano": 2002,
+    "formato": "modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00011",
+    "turns": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "e um Duster 2023",
+      "Cpf [CPF], tenho 79 anos, cep [CEP]\n[imagem] foto do veiculo na garagem\n[audio] mensagem de voz (18s)\nqualquer coisa me chama"
+    ],
+    "idade": 79,
+    "veiculo_ano": 2023,
+    "formato": "e_um_modelo"
+  },
+  {
+    "conversation_id": "conv_00012",
+    "turns": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "Renault Sandero 2013",
+      "Cpf [CPF], tenho 46 anos, cep [CEP]\n[imagem] foto do veiculo na garagem\na placa é [PLACA] se precisar",
+      "a franquia ta alta... a SulAmerica me ofereceu menos",
+      "vou ficar com a outra"
+    ],
+    "idade": 46,
+    "veiculo_ano": 2013,
+    "formato": "marca_modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00013",
+    "turns": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "e um Corolla 2024",
+      "Tenho 41 anos, cep [CEP], cpf [CPF]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\n[documento] CNH_frente.pdf\n[audio] mensagem de voz (18s)\na placa é [PLACA] se precisar",
+      "fechado!"
+    ],
+    "idade": 41,
+    "veiculo_ano": 2024,
+    "formato": "e_um_modelo"
+  },
+  {
+    "conversation_id": "conv_00014",
+    "turns": [
+      "Ola! Vi o anuncio de voces, quanto fica o seguro?",
+      "Toyota Corolla Cross 2014",
+      "Tenho 47 anos, cpf [CPF], cep [CEP]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\n[documento] CNH_frente.pdf\nto no aguardo",
+      "vi mais barato na concorrente... a SulAmerica me ofereceu menos",
+      "vou ficar com a outra"
+    ],
+    "idade": 47,
+    "veiculo_ano": 2014,
+    "formato": "marca_modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00015",
+    "turns": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "Creta, ano 2016",
+      "Tenho 55 anos, cpf [CPF], cep [CEP]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\n[documento] CNH_frente.pdf\na placa é [PLACA] se precisar",
+      "o preco ta salgado",
+      "pode mandar sim"
+    ],
+    "idade": 55,
+    "veiculo_ano": 2016,
+    "formato": "modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00016",
+    "turns": [
+      "Ola! Vi o anuncio de voces, quanto fica o seguro?",
+      "e um HB20 2007",
+      "Cep [CEP], tenho 75 anos, cpf [CPF]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\n[documento] CNH_frente.pdf\n[imagem] foto do veiculo na garagem\n[audio] mensagem de voz (18s)\nto no aguardo",
+      "a franquia ta alta... a SulAmerica me ofereceu menos",
+      "deixa pra la por enquanto"
+    ],
+    "idade": 75,
+    "veiculo_ano": 2007,
+    "formato": "e_um_modelo"
+  },
+  {
+    "conversation_id": "conv_00017",
+    "turns": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "e um Polo 2010",
+      "Tenho 20 anos, cep [CEP], cpf [CPF]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\n[imagem] foto do veiculo na garagem\nto no aguardo",
+      "achei caro pra esse carro",
+      "pode mandar sim"
+    ],
+    "idade": 20,
+    "veiculo_ano": 2010,
+    "formato": "e_um_modelo"
+  },
+  {
+    "conversation_id": "conv_00018",
+    "turns": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "e um Corolla 2016",
+      "Tenho 77 anos, cep [CEP], cpf [CPF]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\n[documento] CNH_frente.pdf\nqualquer coisa me chama",
+      "vamos nessa, gostei"
+    ],
+    "idade": 77,
+    "veiculo_ano": 2016,
+    "formato": "e_um_modelo"
+  },
+  {
+    "conversation_id": "conv_00019",
+    "turns": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "Honda City 2011",
+      "Cpf [CPF], cep [CEP], tenho 21 anos\n[audio] mensagem de voz (18s)\nqualquer coisa me chama"
+    ],
+    "idade": 21,
+    "veiculo_ano": 2011,
+    "formato": "marca_modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00020",
+    "turns": [
+      "Oi, queria fazer um seguro pro meu carro",
+      "Hyundai Creta 2010",
+      "Cep [CEP], tenho 63 anos, cpf [CPF]\n[audio] mensagem de voz (18s)\nto no aguardo",
+      "fechado!"
+    ],
+    "idade": 63,
+    "veiculo_ano": 2010,
+    "formato": "marca_modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00021",
+    "turns": [
+      "Boa tarde, quero uma cotacao",
+      "Yaris, ano 2022",
+      "Cpf [CPF], tenho 29 anos, cep [CEP]\n[imagem] foto do veiculo na garagem\n[audio] mensagem de voz (18s)\nto no aguardo",
+      "vi mais barato na concorrente... a Porto Seguro me ofereceu menos",
+      "nao precisa, obrigado"
+    ],
+    "idade": 29,
+    "veiculo_ano": 2022,
+    "formato": "modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00022",
+    "turns": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "Volkswagen Polo 2009",
+      "Cep [CEP], tenho 43 anos, cpf [CPF]\n[documento] CNH_frente.pdf\na placa é [PLACA] se precisar",
+      "vamos nessa, gostei"
+    ],
+    "idade": 43,
+    "veiculo_ano": 2009,
+    "formato": "marca_modelo_ano"
+  },
+  {
+    "conversation_id": "conv_00023",
+    "turns": [
+      "eae, tudo bem? to querendo segurar meu carro",
+      "Creta, ano 2015",
+      "Tenho 74 anos, cep [CEP], cpf [CPF]\nmeu email é [EMAIL] e o whats é esse mesmo [TELEFONE]\na placa é [PLACA] se precisar",
+      "fechado!"
+    ],
+    "idade": 74,
+    "veiculo_ano": 2015,
+    "formato": "modelo_ano"
+  }
+]

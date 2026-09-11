@@ -247,3 +247,18 @@ async def test_concurrency_is_bounded_and_case_identity_is_preserved() -> None:
     assert client.ids == {str(i) for i in range(5)}
     assert report["total"] == 5
     assert report["calls"] == 5
+
+
+@pytest.mark.asyncio
+async def test_report_includes_failure_latency():
+    from application.llm import LLMUnavailable
+    from tests.golden.evaluation import EvaluationCase, evaluate_cases
+
+    class Failing:
+        async def complete(self, request):
+            raise LLMUnavailable(latency_ms=2500)
+
+    report = await evaluate_cases([EvaluationCase("case", ("Oi",), 30, 2020, "outro")], Failing())
+    assert report["latency_median_ms"] == 2500
+    assert report["latency_p95_ms"] == 2500
+    assert report["cost_complete"] is False
