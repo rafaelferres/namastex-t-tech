@@ -419,6 +419,18 @@ O bloco de PII no dataset tem ordem embaralhada e caixa inconsistente ("CPF",
 
 O console Streamlit renderiza texto redigido por padrão.
 
+### Retenção: slot é dado operacional, mensagem é log
+
+A redação protege o histórico: mensagens, logs, contexto de LLM e trace. O CEP é a
+exceção deliberada — sem ele a cotação perde o agravo de região —, então fica em
+`conversations.slots` enquanto a conversa está aberta, sobrevive a reinício e nunca
+volta ao texto persistido.
+
+**Política: os slots são purgados no encerramento da conversa.** Encerrar apaga
+`conversations.slots` e o estado do grafo; a recusa final encerra na hora. Permanecem o
+histórico redigido e o trace. Enquanto a conversa está aberta o CEP fica em claro no
+SQLite; cifragem em repouso e encerramento por inatividade ficam como evolução (D-036).
+
 ---
 
 ## O dataset: como foi usado
@@ -506,29 +518,66 @@ Agente inteiro: ingestão, extrator e conversador reais, cadeia de cotação rea
 a API local com `QUOTE_SEED=42`, 20% de falha e 10% de lentidão. 150 conversas do
 dataset sorteadas com seed 2026. Concluída = chegou a apresentar cotação.
 
-| Desfecho | Antes (6 s, LLM 2,0/2,5 s, 4.000 tokens) | Depois (10 s, LLM 4,5 s, 16.000 tokens) |
-|---|---:|---:|
-| **Cotada** | **0 (0%)** | **38 (25,3%)** |
-| Recusa por regra de aceitação | 42 (28,0%) | 44 (29,3%) |
-| Mídia sem resolução (documento, imagem, áudio) | 62 (41,3%) | 63 (42,0%) |
-| Limite de tokens da conversa | 27 (18,0%) | 0 |
-| LLM cortado ou indisponível | 19 (12,7%) | 4 (2,7%) |
-| Cotação indisponível após a escada | 0 | 1 (0,7%) |
-| Prazo do turno | 0 | 0 |
+| Desfecho | 9.2 antes (6 s, LLM 2,0/2,5 s, 4.000 tokens) | 9.2 depois (10 s, LLM 4,5 s, 16.000 tokens) | Tarefa 10 (mídia e prompt) |
+|---|---:|---:|---:|
+| **Cotada** | **0 (0%)** | **38 (25,3%)** | **64 (42,7%)** |
+| Recusa por regra de aceitação | 42 (28,0%) | 44 (29,3%) | 44 (29,3%) |
+| Documento recebido | 62 (41,3%)¹ | 63 (42,0%)¹ | 31 (20,7%) |
+| Segundo áudio sem texto | — | — | 0 |
+| Limite de tokens da conversa | 27 (18,0%) | 0 | 0 |
+| LLM cortado ou indisponível | 19 (12,7%) | 4 (2,7%) | 9 (6,0%) |
+| Cotação indisponível após a escada | 0 | 1 (0,7%) | 2 (1,3%) |
+| Prazo do turno | 0 | 0 | 0 |
 
-- Das 105 conversas elegíveis, 63 escalam por mídia antes de cotar — resolução de
-  mídia é fase própria. Entre as **42 elegíveis sem mídia, 38 cotaram (90,5%)**.
-- Todas as recusas são de leads inelegíveis pelo oráculo, e nenhum inelegível recebeu
-  cotação, nos dois cenários.
-- No "antes", o prazo não aparecia como prazo do turno: aparecia como chamada de LLM
-  cortada em 2–2,5 s e como estouro de 4.000 tokens, que o conversador ultrapassava já
-  na primeira fala.
-- O dataset não tem data de vigência. O harness a responde quando o agente pede e,
-  se a conversa termina sem cotação, pede o plano Completo: 74 dos 573 turnos do
-  "depois" são sintéticos.
-- Objeções: nas 20 conversas em que uma objeção chegou ao agente, as 20 foram ao nó
-  de objeção, todas classificadas pelo modelo. Sobre o dataset inteiro, o roteador
-  antigo levava ao nó 220 das 1.295 conversas com objeção; o piso lexical novo, 1.295.
+¹ Até a tarefa 9.2, documento, imagem e áudio escalavam juntos na primeira mídia.
+
+**Três ressalvas, sem as quais os números leem como inflação:**
+
+1. **Há duas taxas, e a significativa é a menor base.** 42,7% é sobre as 150
+   conversas, cujo denominador inclui 45 inelegíveis — que devem ser recusados, e 44
+   foram — e 31 elegíveis que mandaram documento, que escala por decisão de
+   privacidade, não por falha. A taxa que mede o agente é a das **74 elegíveis sem
+   documento: 64 cotaram (86,5%)**; as outras 10 são 8 cortes de LLM e 2 cotações
+   indisponíveis. Na 9.2 a mesma conta deu 38 de 42 (90,5%), com base diferente: lá
+   imagem e áudio também escalavam e tiravam da base as conversas mais longas.
+2. **117 dos 649 turnos (18,0%) são sintéticos.** O dataset nunca traz data de
+   vigência; o harness responde quando o agente pede e, se a conversa termina sem
+   cotação, pede o plano Completo. Sem isso nenhuma conversa do dataset cotaria. A
+   taxa mede o agente diante de um lead que responde ao que é perguntado.
+3. **O 100% de roteamento de objeção sobre o dataset é por construção.** A lista
+   lexical foi escrita sobre as 36 frases do gerador; que ela cubra as 1.295
+   conversas só prova que a lista cobre a lista (o roteador antigo cobria 220). O
+   número que generaliza é o do modelo: nas 34 conversas em que uma objeção chegou
+   ao agente, as 34 foram ao nó, com 54 classificações feitas pelo modelo e nenhuma
+   pelo piso.
+
+- Todas as recusas são de leads inelegíveis pelo oráculo e nenhum inelegível recebeu
+  cotação, nos três cenários. As 44 conversas recusadas terminaram encerradas, com
+  slots vazios.
+- Nenhuma das 649 falas do agente pediu documento, foto ou CPF.
+- Mídia no replay: 33 imagens e 26 áudios chegaram só como marcador, sem arquivo.
+  Nenhuma imagem escalou e nenhuma conversa teve dois áudios sem texto. Os ramos
+  resolvidos são exercitados só pelas fixtures (tabela abaixo).
+- No "antes", o prazo aparecia como corte de chamada de LLM em 2–2,5 s e como estouro
+  de 4.000 tokens, não como prazo do turno.
+- Tarefa 10: turno p50 1,72 s, p95 4,17 s, máximo 6,11 s, nenhum acima de 8 s; custo
+  conhecido US$ 0,71 (`docs/measurements/task10-e2e-depois.json`).
+
+#### Mídia exercitada de verdade
+
+O dataset não tem arquivo de mídia. Os ramos resolvidos rodam contra o modelo real
+(`google/gemini-2.5-flash`) só sobre as fixtures de `tests/fixtures/media`, via
+`scripts/probe_media.py` (`docs/measurements/task10-media.json`):
+
+| Fixture | Resultado real | Latência | Resposta do agente |
+|---|---|---:|---|
+| Foto nítida de veículo | veículo, confiança alta | 1.984 ms | reconhece e segue |
+| Foto escura e borrada | veículo, confiança baixa | 1.895 ms | nota neutra ("não sei") |
+| Foto de gato | não é veículo, confiança alta | 1.669 ms | nota neutra, sem acusar |
+| Áudio curto (voz sintética) | "Tenho 32 anos e o meu carro é um anix, ano 2020." | 1.901 ms | slots `transcrito`, pedem confirmação |
+
+A transcrição errou "Ônix" — é por isso que slot transcrito nunca vai direto para a
+cotação. Documento não tem adaptador: nunca é enviado a provedor externo.
 
 #### Onde o tempo do turno vai
 

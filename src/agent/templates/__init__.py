@@ -71,6 +71,18 @@ def render_objection(objecao: Objecao) -> str:
     return _OBJECTIONS[objecao]
 
 
+# Reconhece a mídia sem acusar o lead e sem pedir arquivo; a pergunta vem depois.
+_MEDIA_NOTES = {
+    "foto_veiculo": "Recebi a foto do veículo, obrigado.",
+    "foto_neutra": "Recebi sua imagem. Para seguir, preciso dos dados por texto.",
+    "audio_sem_texto": "Não consegui ouvir seu áudio por aqui. Pode me mandar por escrito?",
+}
+
+
+def render_media_note(nota: str) -> str:
+    return _MEDIA_NOTES[nota]
+
+
 def render_safe_reply(products: tuple[ProductFacts, ...]) -> str:
     """Reserva quando a fala do modelo é descartada; nunca carrega valor."""
     return (

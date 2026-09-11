@@ -11,6 +11,19 @@ from domain.product import ProductFacts
 from domain.quote import Declined, Quote
 
 type MessageType = Literal["text", "audio", "image", "document"]
+type MediaNote = Literal["foto_veiculo", "foto_neutra", "audio_sem_texto"]
+
+
+@dataclass(frozen=True, slots=True)
+class MediaResolution:
+    """Resultado não bloqueante da ingestão; documento nunca é resolvido.
+
+    Imagem nunca vira slot: a classificação só orienta uma resposta coerente.
+    """
+
+    transcricao: str | None = field(default=None, repr=False)
+    e_veiculo: bool | None = None
+    confianca: Literal["alta", "baixa"] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +36,7 @@ class InboundMessage:
     provider_message_id: str
     indice: int
     media_ref: str | None = field(default=None, repr=False)
+    resolucao: MediaResolution | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -36,8 +50,10 @@ class InboundMessage:
             raise ValueError("Tipo de mensagem inválido")
 
     @property
-    def media_status(self) -> Literal["nao_resolvido"] | None:
-        return None if self.tipo == "text" else "nao_resolvido"
+    def media_status(self) -> Literal["resolvido", "nao_resolvido"] | None:
+        if self.tipo == "text":
+            return None
+        return "resolvido" if self.resolucao is not None else "nao_resolvido"
 
 
 class Intent(StrEnum):
@@ -57,10 +73,13 @@ class ApresentarCotacao:
 @dataclass(frozen=True, slots=True)
 class PedirDado:
     slot: SlotName
+    nota: MediaNote | None = None  # reconhece a mídia do turno antes da pergunta
 
     def __post_init__(self) -> None:
         if self.slot not in get_args(SlotName.__value__):
             raise ValueError("Dado solicitado inválido")
+        if self.nota is not None and self.nota not in get_args(MediaNote.__value__):
+            raise ValueError("Nota de mídia inválida")
 
 
 @dataclass(frozen=True, slots=True)

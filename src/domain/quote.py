@@ -23,6 +23,7 @@ class QuoteUnavailable(Exception):
         ano_normalizado: bool = False,
         tentativas: int = 1,
         todas_falhas_suspeitas: bool | None = None,
+        detalhe: str | None = None,
     ) -> None:
         super().__init__(message)
         self.suspeita_contrato = suspeita_contrato
@@ -31,6 +32,8 @@ class QuoteUnavailable(Exception):
         self.todas_falhas_suspeitas = (
             suspeita_contrato if todas_falhas_suspeitas is None else todas_falhas_suspeitas
         )
+        # Status e corpo já redigidos pela folha; fica fora da mensagem e do traceback.
+        self.detalhe = detalhe
 
 
 class QuoteContractError(Exception):
@@ -42,10 +45,16 @@ class QuoteContractError(Exception):
         *,
         ano_normalizado: bool = False,
         tentativas: int = 1,
+        detalhe: str | None = None,
     ) -> None:
         super().__init__(message)
         self.ano_normalizado = ano_normalizado
         self.tentativas = tentativas
+        self.detalhe = detalhe
+
+
+class QuoteConfigurationError(QuoteContractError):
+    """Rota ou credencial rejeitada pela API: bug de deploy, herda o não-retry do contrato."""
 
 
 @dataclass(frozen=True, slots=True)

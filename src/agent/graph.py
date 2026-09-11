@@ -22,11 +22,13 @@ from agent.schemas.slots import Slots
 from agent.templates import (
     render_declined,
     render_handoff,
+    render_media_note,
     render_objection,
     render_quote,
     render_safe_reply,
     render_unavailable,
 )
+from application.external import ConfigurationError
 from application.ingest import IngestedTurn
 from application.llm import LLMContractError, LLMUnavailable, TokenBudgetExceeded
 from application.ports import AcceptanceRulesProvider, Clock, QuoteProvider
@@ -45,6 +47,7 @@ from domain.handoff import (
 from domain.messages import (
     ApresentarCotacao,
     Intent,
+    MediaNote,
     MensagemConversacional,
     OutboundMessage,
     PedirDado,
@@ -92,6 +95,9 @@ class TurnState(TypedDict, total=False):
     cep_coletado: bool
     objecao: str | None
     objecao_fonte: str | None
+    nota_midia: str | None
+    audios_sem_texto: int
+    transcrito: bool
 
 
 type HandoffWriter = Callable[[str, str, HandoffDecision], Awaitable[None]]
@@ -152,7 +158,13 @@ class SalesGraph:
         builder.add_conditional_edges("present", self._after_present)
         builder.add_edge("handoff", END)
         builder.add_edge("objection", END)
+        self._checkpointer = checkpointer
         self._graph = builder.compile(checkpointer=checkpointer)
+
+    async def forget(self, conversation_id: str) -> None:
+        """Retenção: o estado do grafo da conversa sai junto com os slots (D-036)."""
+        async with self._locks.setdefault(conversation_id, asyncio.Lock()):
+            await self._checkpointer.adelete_thread(conversation_id)
 
     async def turn(
         self,
@@ -163,13 +175,17 @@ class SalesGraph:
         objecoes_preco: int = 0,
         tipo_midia: str | None = None,
         cep_coletado: bool = False,
+        nota_midia: MediaNote | None = None,
+        audios_sem_texto: int = 0,
+        transcrito: bool = False,
     ) -> TurnState:
         async with self._locks.setdefault(conversation_id, asyncio.Lock()):
             config: RunnableConfig = {"configurable": {"thread_id": conversation_id}}
             previous = await self._graph.aget_state(config)
             if previous.values.get("message_id") == message_id and not previous.next:
                 return cast(TurnState, previous.values)
-            captured = capture_private_cep(text)
+            # CEP transcrito exige confirmação: nunca vira o CEP imutável sem ela.
+            captured = None if transcrito else capture_private_cep(text)
             if captured is not None:
                 if self._private is None:
                     raise RuntimeError("Armazenamento privado de CEP não configurado")
@@ -196,6 +212,9 @@ class SalesGraph:
                 "cep_coletado": cep_coletado or previous.values.get("cep_coletado", False),
                 "objecao": None,
                 "objecao_fonte": None,
+                "nota_midia": nota_midia,
+                "transcrito": transcrito,
+                "audios_sem_texto": previous.values.get("audios_sem_texto", 0) + audios_sem_texto,
             }
             return cast(TurnState, await self._graph.ainvoke(state, config))
 
@@ -207,14 +226,32 @@ class SalesGraph:
                 raise RuntimeError("Armazenamento privado de CEP não configurado")
             await self._private.remember(turn.conversation_id, turn.private_cep)
         messages = sorted(turn.messages, key=lambda item: item.indice)
-        media = next((item.tipo for item in messages if item.tipo != "text"), None)
+        images = [item for item in messages if item.tipo == "image"]
+        unresolved_audio = sum(item.tipo == "audio" and item.resolucao is None for item in messages)
+        note: MediaNote | None = None
+        if unresolved_audio:
+            note = "audio_sem_texto"
+        elif images:
+            # Confiança baixa é "não sei": só alta confirma o veículo; nenhuma escala.
+            seen = any(
+                item.resolucao is not None
+                and item.resolucao.e_veiculo is True
+                and item.resolucao.confianca == "alta"
+                for item in images
+            )
+            note = "foto_veiculo" if seen else "foto_neutra"
         state = await self.turn(
             turn.conversation_id,
             messages[-1].provider_message_id,
             "\n".join(item.corpo for item in messages),
             objecoes_preco=turn.objecoes_preco,
-            tipo_midia=media,
+            tipo_midia="document" if any(item.tipo == "document" for item in messages) else None,
             cep_coletado=turn.private_cep is not None,
+            nota_midia=note,
+            audios_sem_texto=unresolved_audio,
+            transcrito=any(
+                item.tipo == "audio" and item.resolucao is not None for item in messages
+            ),
         )
         payload = state.get("resultado")
         if state["status"] == "cotada" and payload is not None:
@@ -236,13 +273,14 @@ class SalesGraph:
             return OutboundMessage(
                 turn.conversation_id, Intent.ESCALAR, await self._decision(state)
             )
+        stored_note = cast("MediaNote | None", state.get("nota_midia"))
         if state.get("pedido"):
-            return OutboundMessage(
-                turn.conversation_id, Intent.PEDIR_DADO, PedirDado(cast(SlotName, state["pedido"]))
-            )
-        return OutboundMessage(
-            turn.conversation_id, Intent.CONVERSAR, MensagemConversacional(state["texto"])
-        )
+            request = PedirDado(cast(SlotName, state["pedido"]), nota=stored_note)
+            return OutboundMessage(turn.conversation_id, Intent.PEDIR_DADO, request)
+        text = state["texto"]
+        if stored_note:
+            text = f"{render_media_note(stored_note)} {text}".strip()
+        return OutboundMessage(turn.conversation_id, Intent.CONVERSAR, MensagemConversacional(text))
 
     def _remaining(self, state: TurnState) -> float:
         return max(0.0, self._config.budget_seconds - (self._clock.monotonic() - state["inicio"]))
@@ -266,6 +304,11 @@ class SalesGraph:
             )
         except Exception:
             logging.getLogger(__name__).error("turn_trace_write_failed")
+
+    def _external_failure(self, state: TurnState, node: str, error: BaseException) -> None:
+        # Corpo redigido da falha externa vai para a timeline do turno (D-035).
+        detail = getattr(error, "detalhe", None) or type(error).__name__
+        self._event(state, f"{node}_falha", type(error).__name__, 0, detail)
 
     def _update(self, state: TurnState, node: str, start: float, **values: Any) -> TurnState:
         latency = (self._clock.monotonic() - start) * 1000
@@ -292,12 +335,21 @@ class SalesGraph:
             budget = min(self._remaining(state), self._config.extraction_seconds)
             async with asyncio.timeout(budget):
                 result = await self._extractor.extract(
-                    state["entrada"], slots, conversation_id=state["conversation_id"], budget=budget
+                    state["entrada"],
+                    slots,
+                    conversation_id=state["conversation_id"],
+                    budget=budget,
+                    # Slot transcrito volta como confirmação antes de cotar (ARQUITETURA §5).
+                    proveniencia="transcrito" if state.get("transcrito") else "digitado",
                 )
             slots = result.slots
             error = "tokens" if result.tokens_esgotados else None
-        except (LLMUnavailable, TimeoutError):
+        except (LLMUnavailable, TimeoutError) as failure:
             error = "prazo" if self._remaining(state) <= 0 else "llm"
+            self._external_failure(state, "extract", failure)
+        except ConfigurationError as failure:
+            self._external_failure(state, "extract", failure)
+            raise
         return self._update(
             state,
             "extract",
@@ -333,9 +385,8 @@ class SalesGraph:
             attempts = ()
         text = state["entrada"].casefold()
         suggestion = state.get("sugestao")
-        media = {"document": "documento", "image": "imagem", "audio": "audio"}.get(
-            state.get("tipo_midia") or ""
-        )
+        # Só documento conta como mídia escalável aqui; áudio escala pelo acumulado.
+        media = "documento" if state.get("tipo_midia") == "document" else None
         ctx = ConversationContext(
             slots=collected,
             tentativas=attempts,
@@ -344,7 +395,7 @@ class SalesGraph:
             llm_indisponivel=state.get("erro") == "llm",
             prazo_esgotado=state.get("erro") == "prazo",
             tipo_midia=cast(Any, media),
-            midia_resolvida=media is None,
+            audios_nao_resolvidos=state.get("audios_sem_texto", 0),
             objecoes_preco=state["objecoes_preco"],
             pede_humano=any(
                 term in text
@@ -448,9 +499,14 @@ class SalesGraph:
                 sugestao=result.escalacao,
                 **_objection_values(state["entrada"], result.objecao),
             )
-        except LLMContractError:
+        except ConfigurationError as failure:
+            # Bug de deploy: registrado com o corpo e derruba o turno, sem fala de reserva.
+            self._external_failure(state, "converse", failure)
+            raise
+        except LLMContractError as failure:
             # Erro do modelo (ex.: plano fora do catálogo) nunca vira recusa comercial.
             logging.getLogger(__name__).warning("converser_contract_error")
+            self._external_failure(state, "converse", failure)
             return self._update(
                 state,
                 "converse",
@@ -461,8 +517,9 @@ class SalesGraph:
             )
         except TokenBudgetExceeded:
             error = "tokens"
-        except (LLMUnavailable, TimeoutError):
+        except (LLMUnavailable, TimeoutError) as failure:
             error = "prazo" if self._remaining(state) <= 0 else "llm"
+            self._external_failure(state, "converse", failure)
         return self._update(state, "converse", start, erro=error, status="escalada")
 
     async def _after_converse(self, state: TurnState) -> str:

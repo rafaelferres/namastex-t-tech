@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal, Protocol
 
+from application.external import ConfigurationError
 from application.ports import Clock
 from domain.handoff import HandoffDecision
+
+logger = logging.getLogger(__name__)
 
 type HandoffDestination = Literal["lead", "webhook_vendas", "api_fila"]
 type Sleep = Callable[[float], Awaitable[None]]
@@ -23,10 +27,15 @@ HANDOFF_DESTINATIONS: tuple[HandoffDestination, ...] = (
 
 
 class HandoffDeliveryError(Exception):
-    """A sink failed without carrying remote content or private data."""
+    """Falha passageira de entrega; `detalhe` traz status e corpo já redigidos."""
 
-    def __init__(self) -> None:
+    def __init__(self, detalhe: str | None = None) -> None:
         super().__init__("handoff_delivery_failed")
+        self.detalhe = detalhe
+
+
+class HandoffConfigurationError(ConfigurationError):
+    """Destino rejeitou rota ou credencial: bug de deploy, registrado em ERROR."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,10 +114,16 @@ class HandoffDispatcher:
                     idempotency_key=effect.identifier,
                 )
             except Exception as error:
+                detail = getattr(error, "detalhe", None)
+                name = type(error).__name__
+                description = f"{name}: {detail}" if detail else name
+                # Configuração errada é bug de deploy: continua retentando, mas em ERROR.
+                log = logger.error if isinstance(error, ConfigurationError) else logger.warning
+                log("handoff_effect_failed %s %s", effect.destino, description)
                 delay = self._retry_delays[min(effect.tentativas, len(self._retry_delays) - 1)]
                 await self._outbox.mark_handoff_failed(
                     effect.identifier,
-                    error=type(error).__name__,
+                    error=description,
                     next_attempt_at=self._clock.now() + timedelta(seconds=delay),
                 )
             else:

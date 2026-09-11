@@ -27,16 +27,8 @@ from domain.quote import Declined, QuoteContractError, QuoteUnavailable
     "rule, changes, reason",
     [
         (DocumentoRecebido(), {"tipo_midia": "documento"}, HandoffReason.DOCUMENTO),
-        (
-            MidiaNaoResolvida(),
-            {"tipo_midia": "audio", "midia_resolvida": False},
-            HandoffReason.MIDIA,
-        ),
-        (
-            MidiaNaoResolvida(),
-            {"tipo_midia": "imagem", "midia_resolvida": False},
-            HandoffReason.MIDIA,
-        ),
+        # Só o N-ésimo áudio sem texto escala; imagem nunca escala (test_media).
+        (MidiaNaoResolvida(), {"audios_nao_resolvidos": 2}, HandoffReason.MIDIA),
         (
             CotacaoEsgotada(),
             {"resultado_cotacao": QuoteUnavailable(tentativas=3)},

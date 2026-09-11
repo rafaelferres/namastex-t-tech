@@ -127,4 +127,7 @@ def _error_name(error: BaseException | None) -> str | None:
         if isinstance(error, QuoteUnavailable) and error.suspeita_contrato
         else ""
     )
-    return type(error).__name__ + suffix
+    name = type(error).__name__ + suffix
+    # Status e corpo já redigidos e truncados pela folha HTTP (D-035 supera D-013).
+    detail = getattr(error, "detalhe", None)
+    return f"{name}: {detail}" if detail else name

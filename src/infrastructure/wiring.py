@@ -10,11 +10,13 @@ from pathlib import Path
 import httpx
 
 from agent.graph import SalesGraph, TurnConfig
-from agent.nodes.converse import Converser
+from agent.nodes.converse import ConversationInput, Converser
 from agent.nodes.extract import SlotExtractor, capture_private_cep
+from agent.schemas.slots import Slots
 from application.ingest import IngestedTurn, Ingestor
 from application.inspect_trace import InspectQuoteTrace
 from application.llm import LLMClient
+from application.media import MediaResolver
 from application.ports import (
     AcceptanceRulesProvider,
     AttemptRecorder,
@@ -23,11 +25,13 @@ from application.ports import (
     QuoteProvider,
 )
 from application.sales import SalesSession
+from application.startup import verify_dependencies
 from application.tracing import Correlation, CorrelationProvider, current_turn
 from domain.handoff import HandoffDecision
 from infrastructure.llm.budget import BudgetedLLMClient
 from infrastructure.llm.config import LLMConfig
 from infrastructure.llm.http import OpenRouterLLMClient
+from infrastructure.media.resolver import LLMMediaResolver
 from infrastructure.persistence.attempts import SQLiteAttempts
 from infrastructure.persistence.checkpoint import open_checkpointer
 from infrastructure.persistence.connection import connect
@@ -37,7 +41,6 @@ from infrastructure.persistence.quote_cache import SQLiteQuoteCache
 from infrastructure.persistence.turns import SQLiteTurnEvents
 from infrastructure.planos.client import PlanosClient
 from infrastructure.privacy import PrivacyRedactor, install_redacting_logging
-from infrastructure.privacy.ceps import MemoryPrivateCeps
 from infrastructure.quote.cache import CachingQuoteProvider
 from infrastructure.quote.config import QuoteConfig
 from infrastructure.quote.guard import EligibilityGuardProvider
@@ -91,6 +94,7 @@ def build_ingestor(
     sleep: Callable[[float], Awaitable[None]],
     window: float = 0.5,
     capture_cep: Callable[[str], str | None] | None = None,
+    media: MediaResolver | None = None,
 ) -> Ingestor:
     privacy = PrivacyRedactor()
     install_redacting_logging(logging.getLogger(), privacy)
@@ -105,6 +109,7 @@ def build_ingestor(
         sleep=sleep,
         window=window,
         capture_cep=capture_cep,
+        media=media,
     )
 
 
@@ -172,12 +177,37 @@ async def open_sales_stack(
     quote_config: QuoteConfig | None = None,
     window: float = 0.5,
     after_reply: Callable[[str], None] | None = None,
+    verify: bool = True,
+    media: LLMMediaResolver | None = None,
 ) -> AsyncIterator[SalesStack]:
     """Composição única do agente; uma conexão SQLite por papel, no mesmo arquivo."""
-    conversations, outbox, trace, cache, events = (connect(database) for _ in range(5))
+    conversations, outbox, trace, cache, events, private = (
+        connect(database) for _ in range(6)
+    )
     try:
         attempts = SQLiteAttempts(trace)
         planos = PlanosClient(quote_client, clock=clock, ttl=300.0, timeout=2.0)
+
+        async def probe_converser() -> object:
+            facts = (await planos.get()).product_facts
+            probe = ConversationInput("verificacao-partida", "", ("Olá",), facts)
+            return await converser.converse(probe, budget=turn_config.conversation_seconds)
+
+        if verify:
+            # Mesmos parâmetros de produção: o 404 do conversador morreria aqui (D-035).
+            await verify_dependencies(
+                {
+                    **({"llm_midia": media.probe} if media is not None else {}),
+                    "api_cotacao": planos.get,
+                    "llm_extrator": lambda: extractor.extract(
+                        "Olá",
+                        Slots(),
+                        conversation_id="verificacao-partida",
+                        budget=turn_config.extraction_seconds,
+                    ),
+                    "llm_conversador": probe_converser,
+                }
+            )
         products = (await planos.get()).product_facts
         quote = build_quote_provider(
             client=quote_client,
@@ -200,6 +230,7 @@ async def open_sales_stack(
             )
 
         turn_events = SQLiteTurnEvents(events)
+        slots = SQLiteConversations(private)  # CEP durável e purga no encerramento
         async with open_checkpointer(database) as checkpointer:
             graph = SalesGraph(
                 extractor=extractor,
@@ -212,10 +243,10 @@ async def open_sales_stack(
                 traces=attempts,
                 checkpointer=checkpointer,
                 config=turn_config,
-                private_slots=MemoryPrivateCeps(),
+                private_slots=slots,
                 recorder=turn_events,
             )
-            session = SalesSession(graph, delivery, clock)
+            session = SalesSession(graph, delivery, clock, closer=slots)
 
             async def consume(turn: IngestedTurn) -> None:
                 await session.consume(turn)
@@ -229,9 +260,10 @@ async def open_sales_stack(
                 sleep=sleep,
                 window=window,
                 capture_cep=capture_private_cep,
+                media=media,
             ) as ingestor:
                 yield SalesStack(graph, session, ingestor)
             await turn_events.drain()
     finally:
-        for connection in (conversations, outbox, trace, cache, events):
+        for connection in (conversations, outbox, trace, cache, events, private):
             connection.close()

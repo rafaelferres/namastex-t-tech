@@ -88,9 +88,10 @@ def test_config_reads_environment_and_hides_secret() -> None:
         (429, "LLMUnavailable"),
         (500, "LLMUnavailable"),
         (408, "LLMUnavailable"),
-        (400, "LLMContractError"),
-        (401, "LLMContractError"),
-        (302, "LLMContractError"),
+        # Rejeição de configuração não é contrato (D-035): o 404 do conversador era isto.
+        (400, "LLMConfigurationError"),
+        (401, "LLMConfigurationError"),
+        (302, "LLMConfigurationError"),
     ],
 )
 def test_http_errors_are_generic_and_never_retried(status: int, error_name: str) -> None:

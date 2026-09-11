@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import json
 import random
+import re
 import sqlite3
 import time
 from collections import Counter, defaultdict
@@ -34,6 +35,7 @@ from infrastructure.llm.config import LLMConfig
 from infrastructure.llm.http import OpenRouterLLMClient
 from infrastructure.privacy import PrivacyRedactor
 from infrastructure.wiring import SalesStack, open_sales_stack
+from interfaces.rendering import render_outbound
 from interfaces.replay import dataset_path, read_rows
 from tests.fakes import CANONICAL_OBJECTIONS
 
@@ -51,9 +53,14 @@ REASONS = {
     "prazo_do_turno": "prazo",
     "linguagem_indisponivel": "llm_indisponivel",
     "limite_de_tokens": "limite_de_tokens",
-    "documento_recebido": "midia",
-    "midia_nao_resolvida": "midia",
+    "documento_recebido": "documento",
+    "midia_nao_resolvida": "audio_sem_texto",
 }
+# Mesmo padrão do teste de prompt: fala do agente pedindo arquivo (o texto não é gravado).
+ASKS_FOR_FILE = re.compile(
+    r"\b(?:envi|mand|anex|encaminh)\w*\b.{0,30}\b(?:documento|foto|imagem|cpf|cnh|crlv)",
+    re.IGNORECASE,
+)
 
 
 class ObservedClient:
@@ -120,14 +127,14 @@ async def run_conversation(
     conversation = str(rows[0]["conversation_id"])
     event = replied[conversation]
     position = max(int(str(row["message_index"])) for row in rows) + 1
-    turns = synthetic = 0
+    turns = synthetic = asked_for_file = 0
     walls: list[float] = []
     quoted = objection_sent = False
     final: OutboundMessage | None = None
     reply: OutboundMessage | None = None
 
     async def send(messages: list[tuple[str, str, int]]) -> OutboundMessage | None:
-        nonlocal turns
+        nonlocal turns, asked_for_file
         event.clear()
         for kind, body, index in messages:
             await stack.ingestor.ingest(
@@ -140,7 +147,14 @@ async def run_conversation(
         await asyncio.wait_for(event.wait(), timeout=180)
         walls.append(time.monotonic() - start)
         turns += 1
-        return stack.session.latest_response(conversation)
+        reply = stack.session.latest_response(conversation)
+        if (
+            reply is not None
+            and reply.intent is not Intent.ESCALAR
+            and ASKS_FOR_FILE.search(render_outbound(reply))
+        ):
+            asked_for_file += 1
+        return reply
 
     async def synthetic_turn(text: str) -> OutboundMessage | None:
         nonlocal position, synthetic
@@ -197,6 +211,7 @@ async def run_conversation(
         "turnos": turns,
         "sinteticos": synthetic,
         "objecao_enviada": objection_sent,
+        "pedidos_de_arquivo": asked_for_file,
         "espera_s": walls,
         "erro": error,
     }
@@ -317,6 +332,7 @@ async def measure(args: argparse.Namespace) -> dict[str, object]:
             "roteadas_ao_no": len(sent & routed),
             "eventos_por_fonte": dict(Counter(status for _, status in objection_events)),
         },
+        "falas_pedindo_arquivo": sum(int(str(item["pedidos_de_arquivo"])) for item in results),
         "turnos_sinteticos": sum(int(str(item["sinteticos"])) for item in results),
         "turnos_totais": sum(int(str(item["turnos"])) for item in results),
         "conversas": [

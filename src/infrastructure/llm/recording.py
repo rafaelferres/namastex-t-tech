@@ -67,6 +67,17 @@ class RecordedLLMClient:
         canonical = asdict(request)
         if not request.tools:
             canonical.pop("tools")
+        # Anexo vazio não altera hashes legados; presente, entra pelo digest dos bytes.
+        attachments = canonical.pop("anexos")
+        if attachments:
+            canonical["anexos"] = [
+                {
+                    "tipo": item["tipo"],
+                    "formato": item["formato"],
+                    "sha256": hashlib.sha256(item["dados"]).hexdigest(),
+                }
+                for item in attachments
+            ]
         data = {
             "version": 1,
             "position": position,

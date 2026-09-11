@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import StrEnum
-from typing import Protocol
+from typing import Literal, Protocol
+
+from application.external import ConfigurationError
 
 
 class LLMRole(StrEnum):
     EXTRACTOR = "extrator"
     CONVERSATION = "conversador"
+    MEDIA = "midia"
+
+
+@dataclass(frozen=True, slots=True)
+class LLMAttachment:
+    tipo: Literal["imagem", "audio"]
+    formato: str  # MIME da imagem ou formato do áudio
+    dados: bytes = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +45,7 @@ class LLMRequest:
     schema: dict[str, object]
     budget: float
     tools: tuple[LLMTool, ...] = ()
+    anexos: tuple[LLMAttachment, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,15 +60,21 @@ class LLMResponse:
 
 
 class LLMUnavailable(Exception):
-    def __init__(self, *, latency_ms: float | None = None) -> None:
+    def __init__(self, *, latency_ms: float | None = None, detalhe: str | None = None) -> None:
         super().__init__("Serviço LLM indisponível")
         self.latency_ms = latency_ms
+        self.detalhe = detalhe
 
 
 class LLMContractError(Exception):
-    def __init__(self, *, latency_ms: float | None = None) -> None:
+    def __init__(self, *, latency_ms: float | None = None, detalhe: str | None = None) -> None:
         super().__init__("Resposta LLM fora do contrato")
         self.latency_ms = latency_ms
+        self.detalhe = detalhe
+
+
+class LLMConfigurationError(ConfigurationError):
+    """Provedor rejeitou credencial, modelo ou parâmetro; nunca vira fala de reserva."""
 
 
 class TokenBudgetExceeded(Exception):

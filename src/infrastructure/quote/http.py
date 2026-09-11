@@ -11,11 +11,17 @@ from application.ports import Clock
 from domain.quote import (
     Declined,
     Quote,
+    QuoteConfigurationError,
     QuoteContractError,
     QuoteOutcome,
     QuoteRequest,
     QuoteUnavailable,
 )
+from infrastructure.http_errors import describe, describe_transport, is_transient
+
+logger = logging.getLogger(__name__)
+# 400 é payload nosso (contrato) e 422 é recusa; rota e credencial são configuração.
+_CONFIGURATION = frozenset({401, 403, 404, 405})
 
 
 def _decode(response: httpx.Response) -> object:
@@ -49,8 +55,10 @@ class HttpQuoteProvider:
             response = await self._client.post(
                 "/quote", json=payload, timeout=self._timeout, follow_redirects=False
             )
-        except httpx.RequestError:
-            raise QuoteUnavailable(ano_normalizado=ano_normalizado) from None
+        except httpx.RequestError as error:
+            detail = describe_transport(error)
+            logger.warning("quote_http_unavailable %s", detail)
+            raise QuoteUnavailable(ano_normalizado=ano_normalizado, detalhe=detail) from None
 
         status = response.status_code
         if self._observe_status is not None:
@@ -63,8 +71,12 @@ class HttpQuoteProvider:
             try:
                 quote = Quote.from_api(body)
             except QuoteContractError:
+                detail = describe(response)
+                logger.error("quote_http_contract %s", detail)
                 raise QuoteContractError(
-                    "Resposta de cotação fora do contrato", ano_normalizado=ano_normalizado
+                    "Resposta de cotação fora do contrato",
+                    ano_normalizado=ano_normalizado,
+                    detalhe=detail,
                 ) from None
             return replace(quote, ano_normalizado=ano_normalizado)
         if status == 422:
@@ -72,10 +84,21 @@ class HttpQuoteProvider:
             if not isinstance(motivo, str) or not motivo.strip():
                 motivo = "Cotação recusada pela seguradora."
             return Declined(motivo, ano_normalizado=ano_normalizado)
-        if 500 <= status < 600 or status in (408, 425, 429):
+        detail = describe(response)
+        if is_transient(status):
             known_failure = isinstance(body, dict) and body.get("error") == "upstream_unavailable"
+            logger.warning("quote_http_unavailable %s", detail)
             raise QuoteUnavailable(
                 suspeita_contrato=500 <= status < 600 and not known_failure,
                 ano_normalizado=ano_normalizado,
+                detalhe=detail,
             )
-        raise QuoteContractError(ano_normalizado=ano_normalizado)
+        if status in _CONFIGURATION or 300 <= status < 400:
+            logger.error("quote_http_configuration %s", detail)
+            raise QuoteConfigurationError(
+                "API de cotação rejeitou a configuração",
+                ano_normalizado=ano_normalizado,
+                detalhe=detail,
+            )
+        logger.error("quote_http_contract %s", detail)
+        raise QuoteContractError(ano_normalizado=ano_normalizado, detalhe=detail)
