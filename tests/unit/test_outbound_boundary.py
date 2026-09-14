@@ -76,7 +76,9 @@ def llm(*replies: str | LLMToolCall) -> AsyncMock:
         LLMResponse("", "m", 1, 2, None, 0, (reply,))
         if isinstance(reply, LLMToolCall)
         else LLMResponse(
-            json.dumps({"texto": reply, "escalacao": None, "objecao": "nenhuma"}),
+            json.dumps(
+                {"texto": reply, "escalacao": None, "objecao": "nenhuma", "assunto": "seguro_auto"}
+            ),
             "m",
             1,
             2,

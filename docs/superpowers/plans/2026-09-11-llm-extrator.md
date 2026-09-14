@@ -2,7 +2,7 @@
 
 **Objetivo:** cliente por papel, slots estruturados e medição reproduzível sem
 expor PII nem preços ao extrator. Spec: tarefa 8 da conversa e invariantes AGENTS.
-**Workspace:** /home/rafael/namastex-test-tecnico, branch feat/llm-extrator;
+**Workspace:** ~/namastex-test-tecnico, branch feat/llm-extrator;
 cópia /mnt/c preservada como origem da migração. Base 1e236c7.
 
 - [x] Copiar repo para Linux, criar venv próprio e remedir suíte anterior.

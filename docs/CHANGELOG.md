@@ -4,6 +4,74 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Added — Tarefa 13, 2026-09-14
+
+- Verificação de coerência de configuração na partida (D-040): `open_live_stack` recusa,
+  antes de qualquer rede, timeout do LLM abaixo do p99.9 medido (6,9 s), orçamento do turno
+  abaixo da soma dos tetos das etapas e limite de tokens abaixo do máximo medido (10.095).
+  A mensagem traz configurado e medido; variável ausente usa o padrão, com aviso. Com o
+  `.env` da tarefa 8, a CLI sai com código 1 em vez de escalar por tokens no quarto turno.
+  Pisos e padrões num único lugar (`infrastructure/llm/config.py`); o `.env.example` é
+  conferido contra eles por teste.
+- Hedge confirmado por teste: HTTP 500 rápido da folha real produz uma chamada, sem esperar a
+  janela. A demonstração da tarefa 12 mostrava o hedge disparado pela latência (108 ms), não
+  pela falha; o texto foi corrigido.
+
+### Fixed — Tarefa 13
+
+- `AGENTS.md` e `CLAUDE.md` não descrevem mais webhook nem console Streamlit: os adapters
+  reais são CLI, replay e trace. Também corrigidos a cadeia completa e a janela do hedge
+  (100 ms, não ~1,5 s).
+- Divergência reportada com o contexto: a busca termo a termo nas 26.470 mensagens dá zero
+  para "humano", "atendente", "supervisor", "sinistro" e "cancelamento" (`termos_ausentes`
+  em `dataset-facts.json`). O dataset não pode acionar a métrica nem a regra de fora de
+  escopo.
+- Todos os números e logs regenerados no commit final:
+  - 150 conversas: **72/150 cotadas, 72/74 elegíveis sem documento**, 72/72 consistentes com
+    a tabela e com carência, divergência 0 em 223 turnos, US$ 0,84
+    (`task13-e2e.json`);
+  - 751 inelegíveis: **751/751 recusados pela regra local**, nenhuma chamada à `/quote`,
+    nenhum preço, nenhuma escalação, US$ 0,86 (`task13-e2e-751.json`);
+  - `docs/execucao-completa.md` (falha, chamada lenta resgatada pelo hedge, cotação),
+    `docs/execucao-escalacao.md` (escada esgotada e snapshot) e `docs/demo-cli.md`
+    (falha rápida, retry e cotação, sem hedge).
+- Revisão contra os sete critérios do desafio no README, com o que é fraco em cada um.
+- `ai-logs/` completo até a tarefa 13; caminhos locais redigidos; nenhuma chave no
+  histórico do git.
+- Validação: **682 passed** no loop rápido; **695 passed** na suíte completa com o corpus;
+  ruff e mypy limpos.
+
+### Added — Tarefa 12, 2026-09-11
+
+- CLI de conversa, `python -m interfaces.cli`, adapter sobre os mesmos casos de uso:
+  - `--trace` mostra slots com proveniência, políticas, a opinião do conversador e as
+    tentativas de cotação;
+  - `--conversation` retoma pelo checkpointer;
+  - `/imagem`, `/audio` e `/documento` injetam mídia; `/encerrar` apaga slots e estado.
+- Sessão real em `docs/demo-cli.md`: chega à cotação com falha, hedge e retry no turno.
+- Os buracos que a CLI expôs foram para a aplicação e o wiring: `Ingestor.next_index`,
+  `SalesStack.inspector` (inspeção nas conexões vivas) e `open_live_stack` (composição de
+  produção).
+- Divergência sempre gravada (D-039): o evento `decisao` guarda, em todo turno de fala, a
+  decisão da política e a sugestão do modelo (coluna nova `turn_events.sugestao`).
+  Medida na amostra de 150: **0 em 222 turnos**. O dataset não exercita a métrica:
+  nenhum lead pede humano nem traz assunto fora de escopo.
+- "Fora de escopo" ligado: `assunto` no schema do conversador, com piso lexical
+  (`domain/scope.py`) para quando a política pede dado antes da fala. Sinistro e
+  cancelamento escalam com o motivo certo; o piso não dispara em nenhuma mensagem de
+  lead do dataset.
+
+### Fixed — Tarefa 12
+
+- A escada é descrita com três níveis (chamada com hedge, retry, escalação). O cache é
+  descrito como camada preventiva: com TTL até a meia-noite e preço determinístico, ele
+  nunca serviria de reserva depois de falha. Corrigido no README e na arquitetura.
+- A arquitetura não lista mais webhook e console como adapters existentes.
+- Mesma amostra, código atual: **72/150 cotadas, 72/74 elegíveis sem documento**, LLM
+  cortado 0, 72/72 cotações consistentes com a tabela e com carência.
+- Validação: **673 passed** no loop rápido; **686 passed** na suíte completa com o
+  corpus; ruff e mypy limpos.
+
 ### Fixed — Tarefa 11, 2026-09-11
 
 - Teto de LLM dimensionado por conversa (D-038): 7 s por chamada, o p99.9 do extrator em
@@ -149,7 +217,7 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ### Changed — Tarefa 8
 
-- Workspace migrado para /home/rafael/namastex-test-tecnico; original preservado.
+- Workspace migrado para ~/namastex-test-tecnico; original preservado.
   Mesmos 381 testes: 7,79 s em /mnt/c e 1,61 s no Linux.
 - Timeout do budget agora é gravado com latência; cancelamento externo continua
   interrupção. Corrigida por TDD a perda de ano por incerto sem candidato,
@@ -370,7 +438,7 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
   precificação, imports de frameworks ou chamadas proibidas de relógio/sleep/random.
 - Ambiente WSL: com `.venv` em `/mnt/c`, uma medição do comando completo levou
   4,67 s, embora os testes levassem 0,95 s. O ambiente criado nesta sessão foi
-  movido para `/home/rafael/.venvs/namastex-test-tecnico-domain`, mantendo `.venv`
+  movido para `~/.venvs/namastex-test-tecnico-domain`, mantendo `.venv`
   como link local ignorado pelo Git. Após a mudança, a primeira execução levou
   2,23 s e a seguinte 1,90 s; o limite depende também do custo de inicialização
   e do filesystem, não apenas dos testes. Em outros ambientes basta `uv sync`;

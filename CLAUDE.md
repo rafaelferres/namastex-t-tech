@@ -86,23 +86,26 @@ folha para falhar N vezes. Use o Docker só para o end-to-end:
 QUOTE_FAILURE_RATE=1.0 docker compose up
 ```
 
-## Console Streamlit
+## Adapters: CLI, replay e trace
 
-`src/interfaces/streamlit_app.py` é adapter, não um segundo cérebro. Ele chama os
-mesmos casos de uso que o webhook.
+São os únicos que existem, em `src/interfaces/`. Não há webhook de WhatsApp nem
+console Streamlit — não tente consertar nem estender o que não está no código.
 
-Se você precisar de lógica nova para o console funcionar, ela vai para
-`src/application/use_cases/` e ganha teste. Nunca para o arquivo do app.
+`src/interfaces/cli.py` é adapter, não um segundo cérebro. Ele chama os mesmos
+casos de uso que o replay, pela composição `open_live_stack`.
+
+Se você precisar de lógica nova para um adapter funcionar, ela vai para
+`src/application/` ou para o wiring e ganha teste. Nunca para o adapter.
 
 Três coisas que quebram silenciosamente aqui:
 
-- estado de conversa em `st.session_state` — guarde só o `thread_id`, o resto vive
-  no checkpointer
-- `asyncio.run()` espalhado por callback — use a ponte única do módulo
-- PII na tela — o painel de trace renderiza texto redigido por padrão
+- estado de conversa no adapter — guarde só o id da conversa, o resto vive no
+  checkpointer
+- `asyncio.run()` espalhado — a CLI tem uma ponte única, em `main`
+- PII na saída — `--trace` e a inspeção renderizam só texto redigido
 
-A aba de avaliação chama o mesmo código de `tests/golden` e `tests/regression`.
-Métrica que só existe na UI não vale.
+Métrica de avaliação vive em `tests/golden`, `tests/regression` e `scripts/`.
+Métrica que só existe num adapter não vale.
 
 ## Verificações antes de terminar
 

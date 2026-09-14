@@ -55,6 +55,7 @@ from domain.messages import (
 from domain.objection import Objecao, objecao_lexical
 from domain.product import ProductFacts
 from domain.quote import Declined, Quote, QuoteRequest, QuoteUnavailable
+from domain.scope import assunto_lexical
 from infrastructure.privacy import PrivacyRedactor
 
 
@@ -99,6 +100,7 @@ class TurnState(TypedDict, total=False):
     nota_midia: str | None
     audios_sem_texto: int
     transcrito: bool
+    assunto: str | None
 
 
 type HandoffWriter = Callable[[str, str, HandoffDecision], Awaitable[None]]
@@ -216,6 +218,7 @@ class SalesGraph:
                 "nota_midia": nota_midia,
                 "transcrito": transcrito,
                 "audios_sem_texto": previous.values.get("audios_sem_texto", 0) + audios_sem_texto,
+                "assunto": None,
             }
             return cast(TurnState, await self._graph.ainvoke(state, config))
 
@@ -287,7 +290,14 @@ class SalesGraph:
         return max(0.0, self._config.budget_seconds - (self._clock.monotonic() - state["inicio"]))
 
     def _event(
-        self, state: TurnState, etapa: str, status: str, latency: float, erro: str | None
+        self,
+        state: TurnState,
+        etapa: str,
+        status: str,
+        latency: float,
+        erro: str | None,
+        *,
+        sugestao: str | None = None,
     ) -> None:
         if self._recorder is None:
             return
@@ -301,6 +311,7 @@ class SalesGraph:
                     round(latency),
                     erro,
                     self._clock.now(),
+                    sugestao=sugestao,
                 )
             )
         except Exception:
@@ -407,6 +418,11 @@ class SalesGraph:
             attempts = ()
         text = state["entrada"].casefold()
         suggestion = state.get("sugestao")
+        subject = state.get("assunto")
+        if subject in (None, "seguro_auto"):
+            # Piso determinístico abaixo da categoria do modelo, mesmo desenho da objeção:
+            # a política pede dado antes de o conversador falar, e o sinistro não pode esperar.
+            subject = assunto_lexical(state["entrada"]) or "seguro_auto"
         # Só documento conta como mídia escalável aqui; áudio escala pelo acumulado.
         media = "documento" if state.get("tipo_midia") == "document" else None
         ctx = ConversationContext(
@@ -429,6 +445,7 @@ class SalesGraph:
             sugestao_llm=HandoffSuggestion(True, HandoffReason(suggestion)) if suggestion else None,
             slot_em_esclarecimento=cast(SlotName | None, state.get("pedido")),
             tentativas_sem_avanco=state.get("sem_avanco", 0),
+            assunto=cast(Any, subject),
         )
         return self._policy.evaluate(ctx)
 
@@ -522,6 +539,7 @@ class SalesGraph:
                 plano=result.plano_id,
                 texto=result.texto,
                 sugestao=result.escalacao,
+                assunto=result.assunto,
                 **_objection_values(state["entrada"], result.objecao),
             )
         except ConfigurationError as failure:
@@ -547,7 +565,18 @@ class SalesGraph:
         return self._update(state, "converse", start, erro=error, status="escalada")
 
     async def _after_converse(self, state: TurnState) -> str:
-        if (await self._decision(state)).escalar:
+        decision = await self._decision(state)
+        # As duas opiniões, sempre, inclusive sem escalação: a divergência é métrica (D-039).
+        suggestion = state.get("sugestao")
+        self._event(
+            state,
+            "decisao",
+            decision.motivo.value if decision.motivo else "segue",
+            0,
+            None,
+            sugestao=str(suggestion) if suggestion else None,
+        )
+        if decision.escalar:
             return "handoff"
         if state.get("plano"):
             return "quote"

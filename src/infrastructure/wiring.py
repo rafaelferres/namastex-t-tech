@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import random
 import sqlite3
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
@@ -25,17 +27,22 @@ from application.ports import (
     Clock,
     QuoteCache,
     QuoteProvider,
+    SystemClock,
 )
 from application.sales import SalesSession
 from application.startup import verify_dependencies
 from application.tracing import Correlation, CorrelationProvider, current_turn
 from domain.handoff import HandoffDecision
 from infrastructure.llm.budget import BudgetedLLMClient
-from infrastructure.llm.config import LLMConfig
+from infrastructure.llm.config import LLMConfig, verify_configuration
 from infrastructure.llm.http import OpenRouterLLMClient
 from infrastructure.media.resolver import LLMMediaResolver
 from infrastructure.persistence.attempts import SQLiteAttempts
-from infrastructure.persistence.checkpoint import open_checkpointer, open_turn_states
+from infrastructure.persistence.checkpoint import (
+    CheckpointTurnStates,
+    open_checkpointer,
+    open_turn_states,
+)
 from infrastructure.persistence.connection import connect
 from infrastructure.persistence.conversations import SQLiteConversations
 from infrastructure.persistence.delivery import SQLiteDelivery
@@ -112,7 +119,38 @@ def build_ingestor(
         window=window,
         capture_cep=capture_cep,
         media=media,
+        history=store,
     )
+
+
+@asynccontextmanager
+async def open_live_stack(
+    database: Path, *, quote_url: str, turn_config: TurnConfig | None = None
+) -> AsyncIterator[SalesStack]:
+    """Composição de produção para adapters de canal: LLM e API de cotação reais."""
+    config = LLMConfig.from_env()
+    turn_config = turn_config or TurnConfig()
+    # Antes de qualquer rede: o `.env` da tarefa 8 escalava por tokens no quarto turno.
+    verify_configuration(config, turn_config)
+    clock = SystemClock()
+    async with (
+        httpx.AsyncClient(base_url=quote_url) as quote_client,
+        httpx.AsyncClient() as llm_http,
+    ):
+        # Um cliente para os três papéis: a contagem de tokens da conversa é uma só.
+        llm = build_llm_client(client=llm_http, config=config, clock=clock)
+        async with open_sales_stack(
+            database,
+            quote_client=quote_client,
+            extractor=SlotExtractor(llm, PrivacyRedactor(), default_budget=config.budget_seconds),
+            converser=Converser(llm),
+            clock=clock,
+            sleep=asyncio.sleep,
+            rng=random.random,  # ponto de composição: o gerador real entra só aqui
+            turn_config=turn_config,
+            media=LLMMediaResolver(llm),
+        ) as stack:
+            yield stack
 
 
 @asynccontextmanager
@@ -172,6 +210,8 @@ class SalesStack:
     graph: SalesGraph
     session: SalesSession
     ingestor: Ingestor
+    # Mesmas conexões da pilha viva: a timeline pendente é drenada antes da leitura.
+    inspector: InspectConversation
 
 
 def _turn_correlation() -> Correlation:
@@ -284,7 +324,10 @@ async def open_sales_stack(
                 capture_cep=capture_private_cep,
                 media=media,
             ) as ingestor:
-                yield SalesStack(graph, session, ingestor)
+                inspector = InspectConversation(
+                    CheckpointTurnStates(checkpointer), attempts, turn_events, delivery, delivery
+                )
+                yield SalesStack(graph, session, ingestor, inspector)
             await turn_events.drain()
     finally:
         for connection in (conversations, outbox, trace, cache, events, private):

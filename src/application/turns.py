@@ -14,6 +14,8 @@ class TurnEvent:
     latencia_ms: int
     erro: str | None
     criado_em: datetime
+    # Só no evento "decisao": a sugestão do conversador ao lado da decisão da política.
+    sugestao: str | None = None
 
 
 class TurnRecorder(Protocol):

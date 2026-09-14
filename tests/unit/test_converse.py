@@ -21,14 +21,32 @@ def products(plans_payload):
     return project_planos(plans_payload).product_facts
 
 
-def client(content='{"texto":"Posso ajudar.","escalacao":null,"objecao":"nenhuma"}', calls=()):
+DEFAULT = '{"texto":"Posso ajudar.","escalacao":null,"objecao":"nenhuma","assunto":"seguro_auto"}'
+
+
+def client(content=DEFAULT, calls=()):
     return AsyncMock(
         complete=AsyncMock(return_value=LLMResponse(content, "m", 1, 2, None, 0, calls))
     )
 
 
-def speech(text, escalacao=None, objecao="nenhuma"):
-    return client(json.dumps({"texto": text, "escalacao": escalacao, "objecao": objecao}))
+def speech(text, escalacao=None, objecao="nenhuma", assunto="seguro_auto"):
+    content = {"texto": text, "escalacao": escalacao, "objecao": objecao, "assunto": assunto}
+    return client(json.dumps(content))
+
+
+@pytest.mark.asyncio
+async def test_subject_category_is_required_and_reaches_the_result(products):
+    leaf = speech("Entendo.", assunto="sinistro")
+    result = await converse(leaf, products)
+    assert result.assunto == "sinistro"
+    assert "assunto" in leaf.complete.call_args.args[0].schema["required"]
+
+
+@pytest.mark.asyncio
+async def test_subject_outside_the_enum_is_contract_error(products):
+    with pytest.raises(LLMContractError):
+        await converse(speech("Certo.", assunto="seguro_de_vida"), products)
 
 
 async def converse(leaf, products, historico=(), resultado=None):

@@ -35,6 +35,10 @@ class MemoryStore:
     async def get(self, conversation_id):
         return SimpleNamespace(objecoes_preco=self.counts.get(conversation_id, 0))
 
+    async def messages(self, conversation_id):
+        stored = (m for m in self.saved.values() if m.conversation_id == conversation_id)
+        return tuple(sorted(stored, key=lambda m: m.indice))
+
 
 def message(index=0, conversation="conv-a", body="Olá"):
     return InboundMessage(
@@ -69,6 +73,27 @@ def test_six_fragments_are_one_redacted_turn_and_duplicate_is_ignored():
             assert all("529" not in m.corpo for m in store.saved.values())
             assert all(value and len(value) == 64 for value in store.hashes[:-1])
             assert turns[0].messages[0].channel_user_id == "opaque-lead"
+
+        time.run(run())
+
+
+def test_next_index_lets_a_channel_resume_after_persisted_messages():
+    with virtual_time() as time:
+        store = MemoryStore()
+
+        async def consume(turn):
+            pass
+
+        async def run():
+            async with Ingestor(
+                store, store, store, PrivacyRedactor(), consume,
+                clock=time, sleep=time.sleep, history=store,
+            ) as ingest:
+                assert await ingest.next_index("conv-a") == 0
+                await ingest.ingest(message(0))
+                await ingest.ingest(message(4))
+                assert await ingest.next_index("conv-a") == 5
+                assert await ingest.next_index("conv-b") == 0
 
         time.run(run())
 
