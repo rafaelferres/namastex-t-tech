@@ -778,3 +778,84 @@ num recurso de processo (`st.cache_resource`), sem estado de conversa.
 **Consequência:** o console exige o repositório do desafio ao lado e roda em Linux ou WSL
 (o processo filho é encerrado por grupo de processos). A aba de avaliação só funciona a
 partir de um clone do repositório, não de um pacote instalado.
+
+## D-042 — Fala do modelo sem quantidade; valor ao lead só pelo template
+**Data:** 2026-09-14
+**Contexto:** a revisão reproduziu `contains_money("O seguro custa cinco reais por mês.")`
+devolvendo `False`, e o caminho `Converser` → `SalesGraph.respond` → `render_outbound`
+entregando a frase ao lead com intenção `conversar`. O detector de D-030 mirava a forma do
+dinheiro, uma lista aberta: "quatro mil de franquia", "desconto de 15%", "uns cento e vinte
+no pro-rata", "3x de 99", "metade do Premium" e "primeiro mês grátis" também passavam. Não
+enviar preço ao modelo não impede que ele invente um.
+**Alternativas:** estender a regex monetária; um segundo LLM como juiz; tirar a fala livre
+e responder só com templates; manter a fala livre sob o contrato "nenhuma quantidade",
+cobrado pelo código.
+**Decisão:** fala livre sem quantidade. `domain/quantidade.py` reconhece a classe fechada:
+qualquer dígito Unicode, todo cardinal por extenso, unidade monetária (real, centavo, R$,
+BRL), porcentagem, fração ou múltiplo (metade, dobro, triplo, terço) e valor zero (grátis,
+gratuito, de graça, sem custo). "Um" e "uma" ficam de fora por serem artigo. A única exceção
+é o nome aprovado da cobertura, "assistência 24h"/"24 horas". A regra vale em dois pontos:
+- o `Converser` troca a fala por `render_safe_reply` e grava `guardrail`/`violacao`, como
+  antes;
+- o envelope `MensagemConversacional` recusa ser construído com quantidade, então qualquer
+  caminho que tente entregar fala livre com número falha fechado.
+
+Quantidade chega ao lead só por `ApresentarCotacao(Quote, ProductFacts)` → `render_quote`,
+com o `Quote` montado do payload da `/quote`, e pelo motivo de `Declined`, que vem da API ou
+das regras. O prompt já dizia "Não escreva números"; agora o código cobra o mesmo contrato.
+**Consequência:** supera a parte de D-030 que deixava passar número não monetário.
+"Carência de 30 dias", "São 7 coberturas" e datas escritas pelo modelo caem no template:
+esses números também não vêm do payload. Falso positivo ("risco zero", "valor real") cai no
+template, o lado seguro. Fora da garantia: afirmação financeira sem quantidade ("é o mais
+barato", "tem desconto") e grafia não prevista (numeral romano, gíria como "pila"). Uma
+linha antiga do outbox com número em fala livre não é mais reconstruída pelo
+`SQLiteDelivery`; não há banco versionado no repositório.
+
+## D-043 — Recusa e cotação só com evidência confirmada
+**Data:** 2026-09-14
+**Contexto:** `_evaluate` montava o `QuoteRequest` e aplicava as regras antes de olhar o
+status do slot. Idade 80 transcrita, portanto incerta, virava recusa definitiva sem pedido
+de confirmação. `data_inicio="amanhã"` incerta, que o schema aceita, chegava a
+`date.fromisoformat` e derrubava o turno com `ValueError`. O mesmo caminho recusava perfil
+elegível por ano-modelo incerto e cotava valor "informado" que tinha vindo de transcrição.
+**Alternativas:** capturar o `ValueError`; exigir ISO também do slot incerto (perde o
+"amanhã" que pede esclarecimento); promover incerto a informado depois de uma pergunta;
+separar valor confirmado de valor coletado e decidir só pelo primeiro.
+**Decisão:** confirmado é `informado` e `digitado` (`_confirmed` em `agent/graph.py`).
+A recusa local usa `AcceptanceRules.evaluate_profile`, que julga cada dimensão confirmada
+sozinha: idade confirmada fora da faixa recusa mesmo com ano incerto, e o inverso vale
+igual. Dimensão não confirmada não recusa nem aprova. `PedirDado` sai para o primeiro entre
+idade, ano e data sem valor confirmado. A `/quote` só recebe request montado de valores
+confirmados, e só data confirmada passa pelo parse, que o schema já garante ISO. O slot
+incerto continua incerto no estado; vira confirmado quando o extrator devolve o valor
+digitado.
+**Consequência:** "Plano inexistente" deixa de ser recusa da política. Plano não é perfil,
+a tool `cotar` só aceita o enum do catálogo e o guard da cadeia continua checando. Perfil
+inelegível com uma dimensão confirmada é recusado antes de ter a outra, sem rede e sem
+handoff. A normalização do ano seguinte, no guard, e a pergunta de confirmação para ano além
+do seguinte ficam como estavam, agora sobre o valor confirmado.
+
+## D-044 — Uma gramática de CEP para coletor e redator; celular sem máscara
+**Data:** 2026-09-14
+**Contexto:** `redact("Meu telefone é 11987654321")` e `redact("CEP 07.123-456")`
+devolviam o texto original. O coletor (`capture_private_cep`) aceitava ponto, sete dígitos e
+espaço; o redator, só `\d{5}-?\d{3}`. O extrator remendava o CEP pontuado no próprio payload,
+mas ingestão, histórico do grafo, trace e logs usam o redator e guardavam o formato cru.
+O rótulo de telefone não aceitava "é".
+**Alternativas:** remendar cada consumidor; redigir toda sequência de sete a treze dígitos;
+derivar coletor e redator da mesma gramática e dar ao celular sem máscara uma forma própria.
+**Decisão:**
+- `CEP_DIGITS` vive em `infrastructure/privacy` e o coletor o importa. O redator aplica a
+  mesma gramática ao CEP rotulado (inclusive "CEP é") e à mensagem que é só o CEP; em texto
+  corrido sem rótulo, só às formas inequívocas: oito dígitos, hífen ou ponto de milhar.
+- Telefone rotulado aceita conector ("é", "eh", ":") e mais rótulos (cel, whats, zap,
+  contato, número).
+- Celular sem rótulo exige DDD válido e nono dígito, com `55` opcional.
+- O remendo do extrator saiu. Um teste gera todas as formas da gramática do coletor e exige
+  captura e redação juntas.
+**Consequência:** onze dígitos com CPF inválido continuam intactos quando não têm forma de
+celular (`52998224724` tem DDD 52, que não existe); com forma de celular viram `[TELEFONE]`,
+o lado seguro. Sete dígitos soltos no meio do texto, sem rótulo, não são redigidos, porque
+colidem com números comuns. Oito dígitos soltos continuam virando `[CEP]`, inclusive uma data
+compacta como `20260914`. O coletor ainda não captura "meu CEP é 07123-456": o texto é
+redigido, sem vazamento, mas a cotação sai sem o agravo de região.

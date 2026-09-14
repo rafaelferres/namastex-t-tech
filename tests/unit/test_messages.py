@@ -1,9 +1,43 @@
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 
+from agent.templates import render_media_note, render_objection, render_safe_reply
 from domain.handoff import ConversationContext, DescontoForaTabela, HandoffDecision
-from domain.messages import InboundMessage, Intent, OutboundMessage, PedirDado
+from domain.messages import (
+    InboundMessage,
+    Intent,
+    MediaNote,
+    MensagemConversacional,
+    OutboundMessage,
+    PedirDado,
+)
+from domain.objection import Objecao
+from domain.product import ProductFacts
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["O seguro custa cinco reais por mês.", "Desconto de 15% no Premium.", "Franquia de mil."],
+)
+def test_conversational_envelope_cannot_carry_quantity(text: str) -> None:
+    with pytest.raises(ValueError) as error:
+        MensagemConversacional(text)
+    assert text not in str(error.value)
+
+
+def test_every_template_that_becomes_conversation_is_quantity_free() -> None:
+    facts = (
+        ProductFacts("essencial", "Essencial", ("colisao",), False),
+        ProductFacts("premium", "Premium", ("assistencia_24h",), True),
+    )
+    texts = [render_objection(item) for item in Objecao]
+    texts += [render_media_note(note) for note in get_args(MediaNote.__value__)]
+    texts.append(render_safe_reply(facts))
+    for text in texts:
+        assert MensagemConversacional(text).texto == text
 
 
 def test_media_envelope_is_unresolved_and_output_is_intention() -> None:

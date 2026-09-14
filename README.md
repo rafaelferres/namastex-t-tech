@@ -573,7 +573,8 @@ passaram a ser gerados por `scripts/dataset_facts.py`, e não mais à mão.
 A redação acontece **na entrada**, antes de qualquer coisa tocar log, contexto de LLM ou
 banco:
 - CPF, com validação de dígito verificador;
-- e-mail, telefone, placa e CEP completo;
+- e-mail, telefone (inclusive celular sem máscara e rotulado com "é"), placa e CEP em toda
+  forma que o coletor aceita, pela mesma gramática (D-044);
 - processador de redação no logger, que cobre também argumentos e traceback;
 - identidade de canal gravada como hash.
 

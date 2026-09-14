@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -11,9 +12,11 @@ from agent.nodes.converse import ConversationResult, Converser
 from agent.nodes.extract import ExtractionResult
 from agent.schemas.slots import Slots
 from agent.templates import render_objection, render_safe_reply
+from application.ingest import IngestedTurn
 from application.llm import LLMConfigurationError, LLMResponse, LLMToolCall, LLMUnavailable
 from domain.acceptance import AcceptanceRules
 from domain.handoff import HandoffReason
+from domain.messages import InboundMessage, Intent
 from domain.objection import Objecao
 from domain.product import ProductFacts
 from domain.quote import Quote, QuoteUnavailable
@@ -49,6 +52,7 @@ def build(
     config=None,
     converser=None,
     recorder=None,
+    private_slots=None,
 ):
     extractor = AsyncMock(extract=AsyncMock(return_value=ExtractionResult(slots(age))))
     converser = converser or AsyncMock(
@@ -70,8 +74,171 @@ def build(
         checkpointer=checkpointer or InMemorySaver(),
         config=config or TurnConfig(),
         recorder=recorder,
+        private_slots=private_slots,
     )
     return graph, extractor, converser, quote, handoff
+
+
+def slot(value, status="informado", proveniencia="digitado"):
+    return {"valor": value, "status": status, "proveniencia": proveniencia}
+
+
+def profile(**changes):
+    values = {
+        "idade": slot(30),
+        "veiculo_ano": slot(2020),
+        "plano_id": slot("completo"),
+        "data_inicio": slot("2026-09-12"),
+    }
+    return ExtractionResult(Slots.model_validate(values | changes))
+
+
+class PrivateCeps:
+    def __init__(self):
+        self.values = {}
+
+    async def remember(self, conversation_id, cep):
+        self.values.setdefault(conversation_id, cep)
+
+    async def read(self, conversation_id):
+        return self.values.get(conversation_id)
+
+
+def lead_turn(text, index=0):
+    message = InboundMessage("replay", "c", "lead", "text", text, f"m{index}", index)
+    return IngestedTurn("c", (message,), 0)
+
+
+@pytest.mark.parametrize(
+    ("changes", "pedido"),
+    [
+        ({"idade": slot(80, "incerto", "transcrito")}, "idade"),
+        ({"data_inicio": slot("amanhã", "incerto")}, "data_inicio"),
+        ({"veiculo_ano": slot(1990, "incerto", "transcrito")}, "veiculo_ano"),
+        # Informado, mas transcrito: ainda não é confirmação digitada.
+        ({"idade": slot(30, "informado", "transcrito")}, "idade"),
+    ],
+    ids=["idade_inelegivel", "data_relativa", "veiculo_inelegivel", "transcrito_informado"],
+)
+def test_unconfirmed_evidence_asks_before_refusing_or_quoting(
+    plans_payload, quote_payload, changes, pedido
+):
+    with virtual_time() as clock:
+        graph, extractor, converse, quote, handoff = build(clock, plans_payload, quote_payload)
+        extractor.extract.return_value = profile(**changes)
+        reply = clock.run(graph.respond(lead_turn("dado incerto")))
+    assert reply.intent is Intent.PEDIR_DADO
+    assert reply.payload.slot == pedido
+    converse.converse.assert_not_called()
+    quote.quote.assert_not_called()
+    handoff.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"idade": slot(80), "veiculo_ano": slot(2020, "incerto", "transcrito")},
+        {"idade": slot(30, "incerto", "transcrito"), "veiculo_ano": slot(1990)},
+        {"idade": slot(80), "data_inicio": slot("amanhã", "incerto")},
+    ],
+    ids=["idade_confirmada", "veiculo_confirmado", "data_incerta"],
+)
+def test_confirmed_ineligible_evidence_refuses_at_once_without_network_or_handoff(
+    plans_payload, quote_payload, changes
+):
+    with virtual_time() as clock:
+        graph, extractor, converse, quote, handoff = build(clock, plans_payload, quote_payload)
+        extractor.extract.return_value = profile(**changes)
+        reply = clock.run(graph.respond(lead_turn("dados")))
+    assert reply.intent is Intent.RECUSAR
+    assert reply.payload.origem == "regra_local"
+    converse.converse.assert_not_called()
+    quote.quote.assert_not_called()
+    handoff.assert_not_called()
+
+
+@pytest.mark.parametrize(("age", "intent"), [(80, Intent.RECUSAR), (30, Intent.APRESENTAR_COTACAO)])
+def test_typed_confirmation_of_transcribed_age_decides_on_confirmed_value(
+    plans_payload, quote_payload, age, intent
+):
+    private = PrivateCeps()
+    with virtual_time() as clock:
+        graph, extractor, converse, quote, handoff = build(
+            clock, plans_payload, quote_payload, private_slots=private
+        )
+        extractor.extract.side_effect = [
+            profile(idade=slot(age, "incerto", "transcrito")),
+            profile(idade=slot(age)),
+        ]
+        first = clock.run(graph.turn("c", "m0", "tenho essa idade", transcrito=True))
+        assert (first["status"], first["pedido"]) == ("ativa", "idade")
+        quote.quote.assert_not_called()
+        reply = clock.run(graph.respond(lead_turn("Confirmo. CEP 01310-100", 1)))
+    assert reply.intent is intent
+    handoff.assert_not_called()
+    if intent is Intent.RECUSAR:
+        converse.converse.assert_not_called()
+        quote.quote.assert_not_called()
+        return
+    request = quote.quote.call_args.args[0]
+    assert (request.idade, request.cep, request.data_inicio) == (30, "01310100", date(2026, 9, 12))
+
+
+def test_uncertain_relative_start_date_then_confirmed_iso_date_quotes(plans_payload, quote_payload):
+    with virtual_time() as clock:
+        graph, extractor, _, quote, _ = build(clock, plans_payload, quote_payload)
+        extractor.extract.side_effect = [
+            profile(data_inicio=slot("amanhã", "incerto")),
+            profile(data_inicio=slot("2026-09-12")),
+        ]
+        first = clock.run(graph.respond(lead_turn("quero começar amanhã")))
+        assert (first.intent, first.payload.slot) == (Intent.PEDIR_DADO, "data_inicio")
+        second = clock.run(graph.respond(lead_turn("2026-09-12", 1)))
+    assert second.intent is Intent.APRESENTAR_COTACAO
+    assert quote.quote.call_args.args[0].data_inicio == date(2026, 9, 12)
+
+
+@pytest.mark.parametrize(("year", "status"), [(2028, "ativa"), (2027, "cotada")])
+def test_model_year_beyond_next_asks_confirmation_and_next_year_still_quotes(
+    plans_payload, quote_payload, year, status
+):
+    with virtual_time() as clock:
+        graph, extractor, _, quote, _ = build(clock, plans_payload, quote_payload)
+        extractor.extract.return_value = profile(veiculo_ano=slot(year))
+        result = clock.run(graph.turn("c", "m1", "meu carro"))
+    assert result["status"] == status
+    if status == "ativa":
+        assert result["pedido"] == "veiculo_ano"
+        quote.quote.assert_not_called()
+
+
+def test_unmasked_phone_and_punctuated_cep_never_reach_models_state_or_trace(
+    plans_payload, quote_payload
+):
+    recorder, private = Mock(), PrivateCeps()
+    leaf = speaking(LLMToolCall("cotar", {"plano_id": "completo"}))
+    with virtual_time() as clock:
+        graph, extractor, _, quote, _ = build(
+            clock,
+            plans_payload,
+            quote_payload,
+            converser=Converser(leaf),
+            recorder=recorder,
+            private_slots=private,
+        )
+        extractor.extract.return_value = profile()
+        result = clock.run(graph.turn("c", "m1", "Meu telefone é 11987654321 e o CEP 07.123-456"))
+    assert result["status"] == "cotada"
+    assert quote.quote.call_args.args[0].cep == "07123456"  # exceção operacional (D-036)
+    seen = (
+        extractor.extract.call_args.args[0],
+        leaf.complete.call_args.args[0].user,
+        json.dumps(result, default=str),
+        repr(recorder.record.call_args_list),
+    )
+    for payload in seen:
+        for raw in ("11987654321", "07.123-456", "07123456", "123-456"):
+            assert raw not in payload
 
 
 def test_eligible_conversation_quotes_and_templates(plans_payload, quote_payload):

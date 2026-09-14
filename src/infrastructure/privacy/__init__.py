@@ -13,13 +13,26 @@ _PHONE = re.compile(
     r"|[1-9][0-9][ -][0-9]{4,5}[- ]?[0-9]{4}"
     r"|(?:[1-9][0-9])?[0-9]{4,5}-[0-9]{4})(?!\w)"
 )
-# Bare eleven-digit strings are ambiguous: require an explicit telephone label.
+_CONNECTOR = r"\s*(?:[:=]|é|eh)?\s*"
+# Ten or eleven bare digits are ambiguous: a label, even with "é", makes them a telephone.
 _LABELED_PHONE = re.compile(
-    r"(\b(?:telefone|tel|celular|whatsapp|fone)\b\s*[:=]?\s*)[1-9][0-9]{9,10}(?!\w)",
+    r"(\b(?:telefone|tel|celular|cel|whatsapp|whats|zap|fone|contato|n[uú]mero)\b"
+    + _CONNECTOR
+    + r")(?:\+?55)?[1-9][0-9]{9,10}(?!\w)",
     re.IGNORECASE,
 )
+_DDD = r"(?:1[1-9]|2[12478]|3[1-578]|4[1-9]|5[13-5]|6[1-9]|7[13-579]|8[1-9]|9[1-9])"
+# Unlabeled mobile has its own shape: valid area code plus the ninth digit.
+_MOBILE = re.compile(r"(?<![\w+])(?:55)?" + _DDD + r"9[0-9]{8}(?!\w)")
 _PLATE = re.compile(r"(?<!\w)[a-z]{3}-?[0-9][a-z0-9][0-9]{2}(?!\w)", re.IGNORECASE)
-_CEP = re.compile(r"(?<!\w)[0-9]{5}-?[0-9]{3}(?!\w)")
+# Single CEP grammar: agent.nodes.extract captures with it, so every captured shape is redacted.
+CEP_DIGITS = r"[0-9]{2}\.?[0-9]{2,3}[- ]?[0-9]{3}"
+_LABELED_CEP = re.compile(r"(\bCEP" + _CONNECTOR + r")" + CEP_DIGITS + r"(?!\w)", re.IGNORECASE)
+_BARE_CEP = re.compile(r"\s*" + CEP_DIGITS + r"\s*")
+# Unlabeled in running text, only unambiguous shapes: eight digits, hyphen or thousands dot.
+_CEP = re.compile(
+    r"(?<![\w.,])(?:[0-9]{5}-?[0-9]{3}|[0-9]{2}\.[0-9]{3}[- ]?[0-9]{3})(?!\w|[.,][0-9])"
+)
 
 
 def _valid_cpf(candidate: str) -> str | None:
@@ -38,10 +51,14 @@ class PrivacyRedactor:
     """Redact supported Brazilian PII before storage or model consumption."""
 
     def redact(self, text: str) -> str:
+        if _BARE_CEP.fullmatch(text):
+            return "[CEP]"
         text = _EMAIL.sub("[EMAIL]", text)
         text = _CPF.sub(lambda match: "[CPF]" if _valid_cpf(match[0]) else match[0], text)
+        text = _LABELED_CEP.sub(r"\1[CEP]", text)
         text = _PHONE.sub("[TELEFONE]", text)
         text = _LABELED_PHONE.sub(r"\1[TELEFONE]", text)
+        text = _MOBILE.sub("[TELEFONE]", text)
         text = _PLATE.sub("[PLACA]", text)
         return _CEP.sub("[CEP]", text)
 

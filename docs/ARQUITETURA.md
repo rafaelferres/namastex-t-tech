@@ -215,7 +215,9 @@ Três regras sobre o estado:
 
 1. **Slot transcrito nunca vai direto para cotação.** Volta como confirmação de um
    turno. Transcrição erra em dígito, e 2018 versus 2008 cruza faixa de
-   multiplicador sem que o lead perceba — ele falou certo.
+   multiplicador sem que o lead perceba — ele falou certo. Vale também para recusa:
+   só valor `informado` e `digitado` sustenta recusa local ou chamada à `/quote`;
+   incerto ou transcrito vira `PedirDado` e continua incerto no estado (D-043).
 2. **O CEP é imutável depois de coletado.** Uma vez no estado, vai em toda chamada.
    Omiti-lo zera o agravo de região, e 35,8% dos leads estão em faixa agravada.
 3. **O CEP é sempre `str`.** Nunca `int`, nunca sem `zfill(8)`. Os prefixos
@@ -626,6 +628,13 @@ números**.
 coberturas e a existência da carência. **Sem franquia, sem preço, sem
 multiplicador** — franquia e pro-rata são monetários e pertencem ao template.
 
+Não receber preço não impede o modelo de inventar um, então a fala livre não carrega
+quantidade nenhuma (D-042): dígito, numeral por extenso, moeda, porcentagem, fração ou
+valor zero. O `Converser` troca a fala por `render_safe_reply` e registra o guardrail;
+`MensagemConversacional` recusa ser construída com quantidade. Número ao lead só chega
+por `ApresentarCotacao` → `render_quote`, a partir do `Quote` da `/quote`, e pelo motivo
+de recusa.
+
 ### A tool `cotar`
 
 Um único parâmetro:
@@ -731,8 +740,10 @@ Acontece na ingestão, antes de log, contexto de LLM ou banco.
   no mesmo corpus, em ordem embaralhada
 
 PrivacyRedactor valida os dois dígitos de CPF e rejeita sequências repetidas.
-Números nus de onze dígitos com CPF inválido não viram telefone sem contexto
-telefônico explícito; formatos telefônicos reconhecíveis são redigidos.
+Onze dígitos nus viram telefone só com rótulo (inclusive "telefone é") ou com forma de
+celular: DDD válido e nono dígito. CPF inválido sem essa forma fica intacto. O CEP usa
+a gramática do coletor (`CEP_DIGITS`), então todo formato capturado também é redigido
+(D-044).
 RedactingFormatter atua após formatação, incluindo args, traceback e stack.
 O wiring envolve handlers existentes do logger raiz; handlers adicionados depois
 ou em loggers sem propagação devem instalar o mesmo formatter.

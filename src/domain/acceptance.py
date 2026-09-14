@@ -73,11 +73,20 @@ class AcceptanceRules:
     def evaluate(self, req: QuoteRequest, hoje: date) -> Declined | None:
         if req.plano_id not in self.planos_validos:
             return Declined("Plano inexistente")
-        recusa = _evaluate_faixas(req.idade, self.faixas_idade, "Idade fora das faixas aceitas")
-        if recusa is not None:
-            return recusa
+        return self.evaluate_profile(idade=req.idade, veiculo_ano=req.veiculo_ano, hoje=hoje)
+
+    def evaluate_profile(
+        self, *, idade: int | None, veiculo_ano: int | None, hoje: date
+    ) -> Declined | None:
+        """Julga só as dimensões conhecidas; a ausente não recusa nem aprova as demais."""
+        if idade is not None:
+            recusa = _evaluate_faixas(idade, self.faixas_idade, "Idade fora das faixas aceitas")
+            if recusa is not None:
+                return recusa
+        if veiculo_ano is None:
+            return None
         return _evaluate_faixas(
-            max(0, hoje.year - req.veiculo_ano),
+            max(0, hoje.year - veiculo_ano),
             self.faixas_veiculo,
             "Idade do veículo fora das faixas aceitas",
         )

@@ -18,12 +18,10 @@ from application.llm import (
     TokenBudgetExceeded,
 )
 from infrastructure.llm.recording import LLMFixtureInvalid, LLMFixtureMissing
-from infrastructure.privacy import PrivacyRedactor
+from infrastructure.privacy import CEP_DIGITS, PrivacyRedactor
 
-_CEP_DIGITS = r"[0-9]{2}\.?[0-9]{2,3}[- ]?[0-9]{3}"
-_LABELED_CEP = re.compile(r"\bCEP\s*[:=]?\s*(" + _CEP_DIGITS + r")(?!\w)", re.IGNORECASE)
-_BARE_CEP = re.compile(r"^\s*(" + _CEP_DIGITS + r")\s*$")
-_PUNCTUATED_CEP = re.compile(r"(?<!\w)[0-9]{2}\.[0-9]{3}[- ]?[0-9]{3}(?!\w)")
+_LABELED_CEP = re.compile(r"\bCEP\s*[:=]?\s*(" + CEP_DIGITS + r")(?!\w)", re.IGNORECASE)
+_BARE_CEP = re.compile(r"^\s*(" + CEP_DIGITS + r")\s*$")
 _LABELED_MONEY = re.compile(
     r"\b(?:pr[eê]mio|franquia|pro[- ]?rata|pre[cç]o|mensalidade)\s*(?:[ée](?:\s+de)?|de|[:=])?\s*"
     r"(?:R\$\s*)?[0-9][0-9.,]*",
@@ -123,7 +121,6 @@ class SlotExtractor:
         payload = json.dumps({"mensagem": message, "slots": public_slots}, ensure_ascii=False)
         payload = _MONEY.sub("[VALOR]", self._privacy.redact(payload))
         payload = _LABELED_MONEY.sub("[VALOR]", payload)
-        payload = _PUNCTUATED_CEP.sub("[CEP]", payload)
         request = LLMRequest(
             conversation_id=conversation_id,
             role=LLMRole.EXTRACTOR,
