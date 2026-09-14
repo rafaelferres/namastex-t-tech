@@ -6,11 +6,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent.nodes.converse import ConversationInput, Converser, contains_money, project_quote
+from agent.nodes.converse import ConversationInput, Converser, project_quote
 from agent.templates import format_brl, render_safe_reply
 from application.llm import LLMContractError, LLMResponse, LLMToolCall
 from domain.handoff import HandoffReason
 from domain.objection import Objecao
+from domain.quantidade import contem_quantidade
 from domain.quote import Declined, Quote, QuoteUnavailable
 from infrastructure.planos.projections import project_planos
 from tests.fakes import CANONICAL_OBJECTIONS
@@ -137,14 +138,13 @@ async def test_objection_is_required_structured_enum_alongside_speech(products):
 @pytest.mark.parametrize(
     "text",
     [
-        "Carência de 30 dias para roubo e furto.",
         "O Premium inclui assistência 24h e carro reserva.",
-        "São 7 coberturas no Premium, contra 3 no Essencial.",
-        "A vigência pode começar em 01/10/2026.",
         "Entendo, a franquia pesou. Posso mostrar outro plano.",
+        "A carência vale para roubo e furto e conta do início da vigência.",
+        "Um plano mais enxuto pode fazer sentido para você.",
     ],
 )
-async def test_non_monetary_numbers_and_objection_replies_pass(products, text):
+async def test_number_free_speech_and_objection_replies_pass(products, text):
     result = await converse(speech(text), products)
     assert result.texto == text
     assert result.violacao is None
@@ -163,13 +163,20 @@ async def test_non_monetary_numbers_and_objection_replies_pass(products, text):
         "Sai por quinze.",
         "Fica por dezoito mensais.",
         "A franquia é de 1.000.",
+        "O seguro custa cinco reais por mês.",
+        "Consigo desconto de 15% no Premium.",
+        "O primeiro mês é grátis.",
+        # Número fora do payload também é inventado pelo modelo (D-042).
+        "Carência de 30 dias para roubo e furto.",
+        "São 7 coberturas no Premium, contra 3 no Essencial.",
+        "A vigência pode começar em 01/10/2026.",
     ],
 )
-async def test_monetary_speech_falls_back_to_template_and_is_reported(products, text):
+async def test_speech_with_any_quantity_falls_back_to_template_and_is_reported(products, text):
     result = await converse(speech(text), products)
     assert result.texto == render_safe_reply(products)
     assert result.violacao == text
-    assert not contains_money(result.texto)
+    assert not contem_quantidade(result.texto)
 
 
 def test_decline_and_unavailable_keep_distinct_projection(products):

@@ -8,6 +8,7 @@ from typing import Literal, get_args
 
 from domain.handoff import HandoffDecision, SlotName
 from domain.product import ProductFacts
+from domain.quantidade import contem_quantidade
 from domain.quote import Declined, Quote
 
 type MessageType = Literal["text", "audio", "image", "document"]
@@ -84,7 +85,13 @@ class PedirDado:
 
 @dataclass(frozen=True, slots=True)
 class MensagemConversacional:
+    """Fala livre ao lead. Quantidade só chega por ApresentarCotacao, via template (D-042)."""
+
     texto: str
+
+    def __post_init__(self) -> None:
+        if contem_quantidade(self.texto):
+            raise ValueError("Fala conversacional não carrega quantidade")
 
 
 @dataclass(frozen=True, slots=True)

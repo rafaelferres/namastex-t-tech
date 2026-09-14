@@ -129,6 +129,19 @@ def test_acceptance_projection_does_not_retain_pricing_or_source(
     assert rules.evaluate(valid_request(plans_payload), date(2026, 9, 11)) is None
 
 
+def test_profile_is_judged_only_on_the_dimensions_given(plans_payload: dict[str, Any]) -> None:
+    rules = AcceptanceRules.from_api(plans_payload)
+    today = date(2026, 9, 11)
+    assert rules.evaluate_profile(idade=None, veiculo_ano=None, hoje=today) is None
+    assert rules.evaluate_profile(idade=30, veiculo_ano=None, hoje=today) is None
+    assert isinstance(rules.evaluate_profile(idade=80, veiculo_ano=None, hoje=today), Declined)
+    assert isinstance(rules.evaluate_profile(idade=None, veiculo_ano=1990, hoje=today), Declined)
+    both = valid_request(plans_payload, idade=80, veiculo_ano=1990)
+    assert rules.evaluate_profile(idade=80, veiculo_ano=1990, hoje=today) == rules.evaluate(
+        both, today
+    )
+
+
 @pytest.mark.parametrize("payload", [None, {}, {"planos": [], "regras": {}}, {"regras": []}])
 def test_malformed_rules_are_contract_error(payload: object) -> None:
     with pytest.raises(QuoteContractError):

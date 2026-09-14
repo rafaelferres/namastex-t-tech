@@ -17,12 +17,13 @@ from agent.graph import SalesGraph, TurnConfig
 from agent.nodes.converse import Converser
 from agent.nodes.extract import ExtractionResult
 from agent.schemas.slots import Slots
+from agent.templates import render_safe_reply
 from application.ingest import IngestedTurn
 from application.llm import LLMResponse, LLMToolCall
 from application.sales import SalesSession
 from application.tracing import Correlation
 from domain.acceptance import AcceptanceRules
-from domain.messages import InboundMessage
+from domain.messages import InboundMessage, Intent
 from domain.quote import Declined, Quote, QuoteUnavailable
 from infrastructure.persistence.attempts import SQLiteAttempts
 from infrastructure.persistence.connection import connect
@@ -151,6 +152,64 @@ async def test_quote_message_amounts_equal_api_payload(plans_payload, quote_payl
     }
     assert not amounts(text) & other_bases
     assert "multiplicador" not in text.lower() and "base" not in text.lower()
+
+
+# Modelo inventando valor em cada forma que o lead lê como preço.
+INVENTED_AMOUNTS = [
+    "O seguro custa cinco reais por mês.",
+    "Fica R$ 313,80 por mês.",
+    "A mensalidade do Completo fica em noventa e poucos.",
+    "A franquia fica em torno de quatro mil.",
+    "Consigo um desconto de 15% para você.",
+    "Tem desconto de dez por cento no primeiro mês.",
+    "Com o pro-rata, o primeiro pagamento sai bem menor, uns cento e vinte.",
+    "Dá para parcelar em 3x de 99.",
+    "O Essencial sai pela metade do Premium.",
+    "O primeiro mês é grátis.",
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("speech", INVENTED_AMOUNTS)
+async def test_amount_invented_by_model_never_reaches_lead(plans_payload, speech):
+    quote = AsyncMock(quote=AsyncMock())
+    graph = graph_with(plans_payload, leaf=llm(speech), quote=quote)
+    reply = await graph.respond(inbound("c", "quanto fica?", 0))
+    assert reply.intent is Intent.CONVERSAR
+    assert render_outbound(reply) == render_safe_reply(project_planos(plans_payload).product_facts)
+    quote.quote.assert_not_called()
+
+
+# Fala sem quantidade segue intacta: qualificação, objeção e conversa útil continuam.
+NUMBER_FREE = [
+    "Perfeito! Qual plano você prefere: Essencial, Completo ou Premium?",
+    "O Premium inclui assistência 24h e carro reserva.",
+    "Entendo, a franquia pesou. Posso mostrar um plano com menos coberturas.",
+    "A carência vale para roubo e furto e conta do início da vigência.",
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("speech", NUMBER_FREE)
+async def test_number_free_speech_reaches_lead_intact(plans_payload, speech):
+    graph = graph_with(plans_payload, leaf=llm(speech), quote=AsyncMock())
+    assert render_outbound(await graph.respond(inbound("c", "me conta dos planos", 0))) == speech
+
+
+@pytest.mark.asyncio
+async def test_lead_qualification_numbers_reach_model_and_quote_comes_from_payload(
+    plans_payload, quote_payload
+):
+    lead = "Tenho 35 anos, carro 2019, quero início em 2026-09-16"
+    leaf = llm("Certo! Qual plano você prefere?", LLMToolCall("cotar", {"plano_id": "completo"}))
+    quote = AsyncMock(quote=AsyncMock(return_value=Quote.from_api(quote_payload)))
+    graph = graph_with(plans_payload, leaf=leaf, quote=quote)
+    assert render_outbound(await graph.respond(inbound("c", lead, 0))) == (
+        "Certo! Qual plano você prefere?"
+    )
+    assert json.loads(leaf.complete.call_args_list[0].args[0].user)["historico"] == [lead]
+    presented = render_outbound(await graph.respond(inbound("c", "quero o completo", 1)))
+    assert amounts(presented) == payload_amounts(quote_payload)
 
 
 @pytest.mark.asyncio

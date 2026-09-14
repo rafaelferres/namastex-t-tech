@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -15,6 +14,7 @@ from application.llm import LLMClient, LLMContractError, LLMRequest, LLMRole, LL
 from domain.handoff import HandoffReason
 from domain.objection import Objecao
 from domain.product import ProductFacts
+from domain.quantidade import contem_quantidade
 from domain.quote import Declined, Quote, QuoteOutcome, QuoteUnavailable
 from domain.scope import Assunto
 from infrastructure.privacy import PrivacyRedactor
@@ -61,30 +61,6 @@ def project_quote(
         "coberturas": list(facts.coberturas),
         "carencia": facts.tem_carencia,
     }
-
-
-_CARDINAL = (
-    r"(?:dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|"
-    r"vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|cento|duzentos|"
-    r"trezentos|quatrocentos|quinhentos|seiscentos|setecentos|oitocentos|novecentos|"
-    r"mil|milh[aã]o|milh[oõ]es)"
-)
-_AMOUNT = rf"(?:\d[\d.,]*|{_CARDINAL})"
-# Rede de proteção, não garantia: o modelo nunca recebe base_mensal nem multiplicadores.
-# Mira valor monetário; dígito solto (carência de 30 dias, assistência 24h) passa.
-_MONEY = re.compile(
-    r"R\$"
-    rf"|\b{_AMOUNT}\s+(?:reais|real|centavos?)\b"
-    r"|\b\d{1,3}(?:\.\d{3})*,\d{2}\b"
-    r"|\b(?:cust\w*|pag\w*|mensalidade|pr[eê]mio|franquia|pre[çc]o|valor|parcela\w*"
-    rf"|sai\s+por|fica\s+por)\s+(?:\w+\s+){{0,2}}{_AMOUNT}\b"
-    rf"|\b{_AMOUNT}\s+(?:por\s+m[eê]s|mensais|ao\s+m[eê]s)\b",
-    re.IGNORECASE,
-)
-
-
-def contains_money(text: str) -> bool:
-    return _MONEY.search(text) is not None
 
 
 class Converser:
@@ -156,7 +132,9 @@ class Converser:
             raise LLMContractError() from None
         text = self._privacy.redact(parsed.texto)
         objection = parsed.objecao if isinstance(parsed.objecao, Objecao) else None
-        if contains_money(text):
+        # Fala livre não carrega quantidade (D-042): valor ao lead só sai do payload da
+        # /quote pelo template; MensagemConversacional recusa o mesmo texto por construção.
+        if contem_quantidade(text):
             return ConversationResult(
                 render_safe_reply(context.produtos),
                 parsed.escalacao,

@@ -4,6 +4,18 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Fixed — Revisão de invariantes, 2026-09-14
+
+- Fala do modelo com quantidade não chega mais ao lead: dígito, numeral por extenso, moeda,
+  porcentagem, fração e valor zero. O `Converser` troca a fala pelo template e registra o
+  guardrail; o envelope `MensagemConversacional` recusa o mesmo texto (D-042).
+- Slot incerto ou transcrito não sustenta recusa nem cotação. Recusa local só com dimensão
+  confirmada (`AcceptanceRules.evaluate_profile`); data relativa incerta pede confirmação em
+  vez de derrubar o turno com `ValueError` (D-043).
+- Redação cobre CEP em toda forma que o coletor aceita (gramática única), telefone rotulado
+  com "é" e celular sem máscara com DDD válido, em persistência, contexto de LLM, trace e
+  logs (D-044).
+
 ### Added — Tarefa 14, 2026-09-14
 
 - Console Streamlit (`src/interfaces/streamlit_app.py`), quarto adapter, no grupo opcional

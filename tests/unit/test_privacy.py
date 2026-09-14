@@ -1,12 +1,83 @@
 from __future__ import annotations
 
 import logging
+import re
 from hashlib import sha256
 from io import StringIO
 
 import pytest
 
-from infrastructure.privacy import PrivacyRedactor
+from agent.nodes.extract import capture_private_cep
+from infrastructure.privacy import PrivacyRedactor, install_redacting_logging
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Meu telefone é 11987654321", "Meu telefone é [TELEFONE]"),
+        ("meu celular eh 11987654321", "meu celular eh [TELEFONE]"),
+        ("Número: 1133334444", "Número: [TELEFONE]"),
+        ("me chama no 11987654321 amanhã", "me chama no [TELEFONE] amanhã"),
+        ("whatsapp do lead 5511987654321", "whatsapp do lead [TELEFONE]"),
+        ("CEP 07.123-456", "CEP [CEP]"),
+        ("cep é 07.123-456", "cep é [CEP]"),
+        ("Moro no 07.123-456, perto do centro", "Moro no [CEP], perto do centro"),
+        ("CEP: 7123456", "CEP: [CEP]"),
+    ],
+)
+def test_unmasked_phone_and_punctuated_cep_are_redacted(text: str, expected: str) -> None:
+    assert PrivacyRedactor().redact(text) == expected
+
+
+# Todas as formas da gramática do coletor: ponto opcional, 7 ou 8 dígitos, separador opcional.
+CEP_SHAPES = [
+    f"07{dot}{middle}{separator}456"
+    for dot in ("", ".")
+    for middle in ("123", "12")
+    for separator in ("", "-", " ")
+]
+
+
+@pytest.mark.parametrize("cep", CEP_SHAPES)
+@pytest.mark.parametrize("template", ["CEP {}", "cep: {}", "CEP={}", "{}", " {} "])
+def test_every_cep_shape_the_collector_captures_is_redacted(cep: str, template: str) -> None:
+    text = template.format(cep)
+    assert capture_private_cep(text) == re.sub(r"\D", "", cep).zfill(8)
+    assert not re.search(r"\d", PrivacyRedactor().redact(text))
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "R$ 1.234,56 por mês",
+        "franquia de R$ 12.345,67",
+        "valor 1.234.567,89",
+        "início em 2026-09-14",
+        "vigência 14/09/2026",
+        "carro modelo 2027",
+        "tenho 35 anos",
+        "carência de 30 dias",
+        "conversa conv_00013",
+        "trace 7f3a9c1e2b",
+        "evento 1726329600",
+        "código 52998224724",
+        "plano premium",
+    ],
+)
+def test_non_pii_numbers_and_identifiers_are_preserved(text: str) -> None:
+    assert PrivacyRedactor().redact(text) == text
+
+
+def test_logging_redacts_unmasked_phone_and_punctuated_cep() -> None:
+    logger = logging.Logger("privacy-formats")
+    output = StringIO()
+    logger.addHandler(logging.StreamHandler(output))
+    install_redacting_logging(logger)
+    logger.warning("lead disse %s", "Meu telefone é 11987654321 e CEP 07.123-456")
+    rendered = output.getvalue()
+    assert "lead disse Meu telefone é [TELEFONE] e CEP [CEP]" in rendered
+    for raw in ("11987654321", "07.123-456"):
+        assert raw not in rendered
 
 
 @pytest.mark.parametrize("label", ["CPF", "Cpf", "cpf", "documento"])

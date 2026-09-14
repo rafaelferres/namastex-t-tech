@@ -18,7 +18,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agent.nodes.converse import ConversationInput, Converser, project_quote
 from agent.nodes.extract import SlotExtractor, capture_private_cep
-from agent.schemas.slots import Slots
+from agent.schemas.slots import Slots, SlotValue
 from agent.templates import (
     render_declined,
     render_handoff,
@@ -104,6 +104,16 @@ class TurnState(TypedDict, total=False):
 
 
 type HandoffWriter = Callable[[str, str, HandoffDecision], Awaitable[None]]
+
+
+def _confirmed[T](slot: SlotValue[T] | None) -> T | None:
+    """Valor que sustenta recusa ou cotação: informado e digitado (ARQUITETURA §5).
+
+    Incerto ou transcrito devolve None e o grafo pede confirmação; nunca é promovido.
+    """
+    if slot is None or slot.status != "informado" or slot.proveniencia != "digitado":
+        return None
+    return slot.valor
 
 
 def _objection_values(entrada: str, model: Objecao | None) -> dict[str, str | None]:
@@ -393,16 +403,13 @@ class SalesGraph:
 
     def _request(self, state: TurnState, plan: str) -> QuoteRequest | None:
         slots = Slots.model_validate(state.get("slots", {}))
-        if slots.idade is None or slots.veiculo_ano is None:
+        age, year = _confirmed(slots.idade), _confirmed(slots.veiculo_ano)
+        beginning = _confirmed(slots.data_inicio)
+        # Só valor confirmado vai à /quote; data incerta ("amanhã") nunca chega ao parse.
+        if age is None or year is None or (slots.data_inicio is not None and beginning is None):
             return None
-        if slots.idade.valor is None or slots.veiculo_ano.valor is None:
-            return None
-        beginning = slots.data_inicio.valor if slots.data_inicio else None
         return QuoteRequest(
-            plan,
-            slots.idade.valor,
-            slots.veiculo_ano.valor,
-            data_inicio=date.fromisoformat(beginning) if beginning else None,
+            plan, age, year, data_inicio=date.fromisoformat(beginning) if beginning else None
         )
 
     async def _decision(self, state: TurnState) -> HandoffDecision:
@@ -456,10 +463,11 @@ class SalesGraph:
         except Exception:
             rules = None
         slots = Slots.model_validate(state.get("slots", {}))
-        plan = slots.plano_id.valor if slots.plano_id else None
-        req = self._request(state, plan or (self._products[0].plano_id if self._products else ""))
-        if req is not None and rules is not None:
-            declined = rules.evaluate(req, self._clock.today())
+        today = self._clock.today()
+        age, year = _confirmed(slots.idade), _confirmed(slots.veiculo_ano)
+        if rules is not None:
+            # Recusa definitiva só com evidência confirmada; cada dimensão basta sozinha.
+            declined = rules.evaluate_profile(idade=age, veiculo_ano=year, hoje=today)
             if declined:
                 return self._update(
                     state,
@@ -472,9 +480,13 @@ class SalesGraph:
         decision = await self._decision(state)
         if decision.escalar:
             return self._update(state, "policy", start, status="escalada")
-        for name in ("idade", "veiculo_ano", "data_inicio"):
-            slot = getattr(slots, name)
-            if slot is None or slot.valor is None or slot.status == "incerto":
+        confirmed = {
+            "idade": age,
+            "veiculo_ano": year,
+            "data_inicio": _confirmed(slots.data_inicio),
+        }
+        for name, value in confirmed.items():
+            if value is None:
                 wording = {
                     "idade": "sua idade",
                     "veiculo_ano": "o ano-modelo do veículo",
@@ -490,7 +502,7 @@ class SalesGraph:
                     sem_avanco=count,
                     texto=f"Pode informar ou confirmar {wording}?",
                 )
-        if req is not None and req.veiculo_ano > self._clock.today().year + 1:
+        if year is not None and year > today.year + 1:
             return self._update(
                 state,
                 "policy",
