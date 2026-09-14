@@ -453,7 +453,11 @@ e 3xx, porque 400 é contrato e 422 é recusa), transitório (408, 425, 429 e 5x
 contrato. Erro de configuração nunca vira indisponibilidade nem fala de reserva, e
 falha alto. O corpo da resposta, redigido e truncado, acompanha toda falha no log e no
 trace. `verify_dependencies` faz uma chamada mínima a cada dependência na abertura da
-pilha e impede a partida com configuração errada (D-035).
+pilha e impede a partida com configuração errada (D-035). Antes dela, sem rede,
+`verify_configuration` compara a configuração de produção com os pisos medidos em
+`infrastructure/llm/config.py`: timeout do LLM abaixo do p99.9, orçamento do turno abaixo
+da soma dos tetos das etapas e limite de tokens abaixo do máximo medido impedem a partida;
+variável ausente usa o padrão do `.env.example`, com aviso (D-040).
 
 ### Circuit breaker
 

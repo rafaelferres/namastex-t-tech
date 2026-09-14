@@ -5,11 +5,15 @@ import time
 from collections.abc import Iterator
 from typing import Any
 
+import httpx
 import pytest
 
 from domain.quote import Declined, Quote, QuoteContractError, QuoteRequest, QuoteUnavailable
+from infrastructure.quote.config import QuoteConfig
 from infrastructure.quote.hedge import HedgingQuoteProvider
+from infrastructure.quote.http import HttpQuoteProvider
 from infrastructure.quote.retry import RetryingQuoteProvider
+from tests.fakes import FakeClock
 from tests.virtual_time import ScriptedProvider, Step, Timeline, virtual_time
 
 REQ = QuoteRequest("completo", 30, 2026, "01310100")
@@ -51,6 +55,33 @@ def test_first_completion_before_or_at_window_does_not_hedge(
     assert leaf.requests == [REQ]
     assert leaf.finished == [0]
     assert timeline.monotonic() == latency
+
+
+def test_fast_http_500_is_a_single_call_without_waiting_for_the_window(
+    timeline: Timeline,
+) -> None:
+    # Tarefa 13: hedge trata só latência. Falha rápida propaga na hora, para o retry.
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500, json={"error": "upstream_unavailable"})
+
+    async def scenario() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(base_url="https://quote.test", transport=transport) as client:
+            leaf = HttpQuoteProvider(client, timeout=2.0, clock=FakeClock())
+            provider = HedgingQuoteProvider(
+                leaf, hedge_delay=QuoteConfig().hedge_delay, sleep=timeline.sleep
+            )
+            with pytest.raises(QuoteUnavailable):
+                await provider.quote(REQ)
+
+    timeline.run(scenario())
+    assert calls == 1
+    assert timeline.monotonic() == 0
+    assert timeline.completed_sleeps == []
 
 
 @pytest.mark.parametrize(
