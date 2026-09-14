@@ -130,34 +130,85 @@ provedor, não a inferência. Relatórios em `tests/fixtures/llm-isolated/models
 
 ---
 
-## Rodando
+## Como rodar
 
-Pré-requisitos: [uv](https://docs.astral.sh/uv/), o repo do desafio ao lado deste e uma
-chave do OpenRouter.
+### Requisitos
+
+- **Linux, macOS ou WSL 2.** O console encerra a API de cotação que ele mesmo sobe por grupo
+  de processos, e isso não existe no Windows nativo.
+- **[uv](https://docs.astral.sh/uv/).** Ele baixa o Python 3.12 se a máquina não tiver.
+- **O repositório do desafio clonado ao lado deste.** A API de cotação e o dataset vêm de lá.
+- **Uma chave do [OpenRouter](https://openrouter.ai/).**
+
+```
+<pasta>/
+  namastex-fde-challenge/    # quote-service/ (API de cotação) e dataset/
+  namastex-test-tecnico/     # este repositório
+```
+
+No WSL, clone dentro do sistema de arquivos do Linux (`~/...`), não em `/mnt/c/...`: ali a
+instalação leva minutos e o `uv` avisa que não consegue criar hardlinks.
+
+### Preparação
 
 ```bash
-# 1. API de cotação, do repo do desafio. Esta aplicação não tem serviço de dados.
-#    As medições usaram a API fora do Docker, com sorteio fixo:
+cd namastex-test-tecnico
+uv sync                            # dependências principais
+cp .env.example .env               # preencha OPENROUTER_API_KEY
+```
+
+O `.env.example` já traz os tetos medidos e o caminho relativo do dataset
+(`AUTOSEGURO_DATASET`). A partida recusa configuração incoerente antes de qualquer rede:
+timeout do LLM abaixo do p99.9 medido, orçamento do turno abaixo da soma das etapas ou
+limite de tokens abaixo do máximo medido. A mensagem traz o valor configurado e o medido
+(D-040).
+
+### Console Streamlit
+
+O caminho mais curto. Um comando, e o console sobe a API de cotação sozinho:
+
+```bash
+uv run --group console --env-file .env streamlit run src/interfaces/streamlit_app.py
+```
+
+Abra http://localhost:8501.
+
+- `--group console` instala o Streamlit, que fica fora da instalação principal. Sem ele, o
+  comando falha com `Failed to spawn: streamlit`.
+- Se o repositório do desafio não estiver ao lado deste, aponte para ele:
+  `AUTOSEGURO_QUOTE_SERVICE=/caminho/para/namastex-fde-challenge/quote-service uv run --group console ...`
+- Um console por vez: a API que ele sobe usa as portas 18020 e 18021.
+
+![Sandbox do console: a conversa à esquerda e, à direita, o trace do turno com slots, políticas, nível da escada e tentativas de cotação](docs/console-sandbox.png)
+
+- **Sandbox:** conversa com o agente e, ao lado, o mesmo relatório redigido do `--trace`
+  (slots com proveniência, políticas, nível da escada, tentativas com hedge e guardrail).
+  Na barra lateral, a taxa de falha e o `QUOTE_SEED` reiniciam a API ao vivo: em 20% o retry
+  recupera; em 100% a escada esgota e a conversa escala com snapshot. Imagem e documento
+  entram pelos botões de mídia. A mesma cotação no mesmo dia sai do cache, fora da escada;
+  "Banco novo" limpa.
+- **Avaliação:** os números desta página, lidos dos arquivos que as rodadas gravaram, cada
+  um com a sua ressalva, e botões para rodar de novo com as mesmas funções de `tests/golden`,
+  `tests/regression` e `scripts/`. Por padrão em amostra; o conjunto completo é escolha
+  explícita, porque consome tokens e tempo.
+
+### Conversa no terminal
+
+Na CLI, a API de cotação sobe à parte, num segundo terminal:
+
+```bash
+# terminal 1: API do desafio, com o sorteio fixo usado nas medições
 cd ../namastex-fde-challenge/quote-service
 QUOTE_SEED=42 QUOTE_FAILURE_RATE=0.20 QUOTE_SLOW_RATE=0.10 \
   uv run --with fastapi --with uvicorn uvicorn app.main:app --port 18010
-#    Alternativa: `docker compose up --build` no repo do desafio (porta 8000; para
-#    sorteio fixo, descomente QUOTE_SEED no docker-compose.yml de lá).
+#   alternativa: `docker compose up --build` no repo do desafio; ele usa a porta 8000,
+#   que é o padrão da CLI, então o --quote-url pode ser omitido
 
-# 2. dependências; o esquema SQLite é aplicado ao abrir o banco
-uv sync
-
-# 3. variáveis
-cp .env.example .env               # preencha OPENROUTER_API_KEY
-export AUTOSEGURO_DATASET=../namastex-fde-challenge/dataset/conversations.parquet
-```
-
-Conversa no terminal, com a API da etapa 1 no ar:
-
-```bash
+# terminal 2: a conversa
 uv run --env-file .env python -m interfaces.cli --trace --quote-url http://127.0.0.1:18010
 # retoma uma conversa pelo id impresso ao sair
-uv run --env-file .env python -m interfaces.cli --conversation cli-1a2b3c4d
+uv run --env-file .env python -m interfaces.cli --conversation cli-1a2b3c4d \
+  --quote-url http://127.0.0.1:18010
 ```
 
 Comandos dentro da conversa:
@@ -171,35 +222,9 @@ proveniência, políticas, opinião do conversador e tentativas de cotação com
 latência e hedge. Uma sessão real, em que a cotação falha, é retentada e sai, está em
 [`docs/demo-cli.md`](docs/demo-cli.md).
 
-A partida recusa configuração incoerente antes de qualquer rede: timeout do LLM abaixo do
-p99.9 medido, orçamento do turno abaixo da soma das etapas ou limite de tokens abaixo do
-máximo medido. A mensagem traz o valor configurado e o medido (D-040).
+### Agente sobre o dataset
 
-### Console Streamlit
-
-![Sandbox do console: a conversa à esquerda e, à direita, o trace do turno com slots, políticas, nível da escada e tentativas de cotação](docs/console-sandbox.png)
-
-```bash
-uv sync --group console            # Streamlit é opcional, fora da instalação principal
-uv run --env-file .env streamlit run src/interfaces/streamlit_app.py
-```
-
-O console sobe a API do desafio como processo filho, a partir de
-`../namastex-fde-challenge/quote-service` (ou `AUTOSEGURO_QUOTE_SERVICE`), para poder
-reiniciá-la com outra taxa de falha e outra semente.
-
-- **Sandbox:** conversa com o agente e, ao lado, o mesmo relatório redigido do `--trace`
-  (slots com proveniência, políticas, nível da escada, tentativas com hedge e guardrail).
-  Na barra lateral, a taxa de falha e o `QUOTE_SEED` reiniciam a API ao vivo: em 20% o retry
-  recupera; em 100% a escada esgota e a conversa escala com snapshot. Imagem e documento
-  entram pelos botões de mídia. A mesma cotação no mesmo dia sai do cache, fora da escada;
-  "Banco novo" limpa.
-- **Avaliação:** os números desta página, lidos dos arquivos que as rodadas gravaram, cada
-  um com a sua ressalva, e botões para rodar de novo com as mesmas funções de `tests/golden`,
-  `tests/regression` e `scripts/`. Por padrão em amostra; o conjunto completo é escolha
-  explícita, porque consome tokens e tempo.
-
-O agente também roda sobre conversas do dataset:
+Com a API do terminal 1 no ar (e o `.env`, que aponta para o dataset):
 
 ```bash
 # conclusão fim a fim, 150 conversas (consome LLM: ~4 min, ~US$ 0,80)
@@ -217,14 +242,27 @@ uv run python -m interfaces.replay --conversation conv_00013
 uv run python -m scripts.dataset_facts --quote-url http://127.0.0.1:18013
 ```
 
-Testes:
+### Testes
+
+Nenhum teste precisa de rede, da API de cotação nem do Streamlit.
 
 ```bash
-uv run pytest -m "not slow"        # loop rápido, offline
-uv run pytest                      # inclui corpus e simulações; sem corpus, esses são pulados
-uv run pytest -m eval              # extração da tarefa 8 por replay das capturas, sem rede
+uv run pytest -m "not slow"             # loop rápido, offline
+uv run --env-file .env pytest           # inclui corpus e simulações; sem o dataset, são pulados
+uv run pytest -m eval                   # extração da tarefa 8 por replay das capturas
 uv run ruff check src tests scripts && uv run mypy src
 ```
+
+### Problemas comuns
+
+| Sintoma | Causa e solução |
+|---|---|
+| `error: Failed to spawn: streamlit` | Faltou `--group console` no `uv run`, ou um `uv sync` sem o grupo removeu o Streamlit. Rode o comando do console como está acima. |
+| Página do console: "API do desafio não encontrada em …" | O repositório do desafio não está ao lado deste. Defina `AUTOSEGURO_QUOTE_SERVICE` com o caminho de `quote-service`. |
+| "Não foi possível iniciar: Configuração inválida na partida — …" | O `.env` tem valores abaixo dos pisos medidos, por exemplo de uma versão antiga. Copie os valores do `.env.example`; a mensagem diz qual variável e o valor medido. |
+| Página do console: "API de cotação não subiu em …" | As portas 18020 ou 18021 estão ocupadas, em geral por outro console aberto. Feche-o. |
+| Testes do corpus aparecem como *skipped* | O dataset não foi encontrado. Rode com `--env-file .env` ou exporte `AUTOSEGURO_DATASET`. |
+| Instalação lenta e aviso de hardlink no WSL | O repositório está em `/mnt/c`. Clone dentro do Linux (`~/...`). |
 
 ---
 
