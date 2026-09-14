@@ -86,23 +86,27 @@ folha para falhar N vezes. Use o Docker só para o end-to-end:
 QUOTE_FAILURE_RATE=1.0 docker compose up
 ```
 
-## Adapters: CLI, replay e trace
+## Adapters: CLI, console Streamlit, replay e trace
 
-São os únicos que existem, em `src/interfaces/`. Não há webhook de WhatsApp nem
-console Streamlit — não tente consertar nem estender o que não está no código.
+São os únicos que existem, em `src/interfaces/`. Não há webhook de WhatsApp — não
+tente consertar nem estender o que não está no código.
 
-`src/interfaces/cli.py` é adapter, não um segundo cérebro. Ele chama os mesmos
-casos de uso que o replay, pela composição `open_live_stack`.
+`src/interfaces/cli.py` e `src/interfaces/streamlit_app.py` são adapters, não um
+segundo cérebro. Eles chamam os mesmos casos de uso que o replay, pela composição
+`open_live_stack`. `tests/unit/test_console.py` verifica as regras do console no
+código-fonte: imports, ponte única, `session_state` só com `thread_id` e avaliação pelas
+funções de `tests/`.
 
 Se você precisar de lógica nova para um adapter funcionar, ela vai para
 `src/application/` ou para o wiring e ganha teste. Nunca para o adapter.
 
 Três coisas que quebram silenciosamente aqui:
 
-- estado de conversa no adapter — guarde só o id da conversa, o resto vive no
-  checkpointer
-- `asyncio.run()` espalhado — a CLI tem uma ponte única, em `main`
-- PII na saída — `--trace` e a inspeção renderizam só texto redigido
+- estado de conversa no adapter — guarde só o id da conversa (`thread_id` em
+  `st.session_state`), o resto vive no checkpointer
+- `asyncio.run()` espalhado — a CLI tem uma ponte única, em `main`; o console usa só
+  `AsyncBridge.run`
+- PII na saída — `--trace`, a inspeção e o painel de trace renderizam só texto redigido
 
 Métrica de avaliação vive em `tests/golden`, `tests/regression` e `scripts/`.
 Métrica que só existe num adapter não vale.

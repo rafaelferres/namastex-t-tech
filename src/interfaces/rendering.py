@@ -29,3 +29,8 @@ def render_outbound(message: OutboundMessage) -> str:
         question = f"Pode informar ou confirmar {names[payload.slot]}?"
         return f"{render_media_note(payload.nota)} {question}" if payload.nota else question
     raise ValueError("Intenção sem renderização")
+
+
+def escape_dollar(text: str) -> str:
+    """Markdown do Streamlit lê `$…$` como LaTeX; "R$ 241,38 … R$ 3.000,00" virava fórmula."""
+    return text.replace("$", "\\$")

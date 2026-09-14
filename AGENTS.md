@@ -110,11 +110,10 @@ src/
   application/     casos de uso e portas (Protocol)
   agent/           LangGraph: grafo, nós, prompts, templates
   infrastructure/  adapters: httpx, sqlite3
-  interfaces/      cli (conversa), replay do dataset, trace (inspeção), rendering
+  interfaces/      cli (conversa), streamlit_app (console), replay do dataset, trace (inspeção)
 ```
 
-Não existem webhook de WhatsApp nem console Streamlit. Não conserte nem estenda
-algo que não está em `src/`.
+Não existe webhook de WhatsApp. Não conserte nem estenda algo que não está em `src/`.
 
 `domain/` e `application/` não importam `langgraph`, `httpx` nem `sqlite3`. O grafo é detalhe de orquestração, não o núcleo.
 
@@ -153,11 +152,12 @@ análise.
 
 ### Adapters
 
-Existem três, em `src/interfaces/`, e todos consomem os mesmos casos de uso:
+Existem quatro, em `src/interfaces/`, e todos consomem os mesmos casos de uso:
 
 | Adapter | Papel |
 |---|---|
 | `cli` | conversa no terminal; `--trace` mostra slots, políticas e tentativas; `--conversation` retoma |
+| `streamlit_app` | console no navegador: sandbox com trace ao lado e controles da API; aba de avaliação |
 | `replay` | envelopes redigidos de conversas do dataset; o harness fim a fim usa os mesmos |
 | `trace` | inspeção de uma cotação ou de uma conversa inteira, só leitura |
 
@@ -171,12 +171,16 @@ Regras:
 - **Nenhuma lógica de negócio no adapter.** Ele traduz entrada em `InboundMessage`,
   chama o caso de uso e renderiza o resultado.
 - **O adapter guarda só o id da conversa.** O estado vive no checkpointer do
-  LangGraph; uma segunda cópia diverge da persistida.
-- **Uma única ponte async.** A CLI chama `asyncio.run()` uma vez, em `main`.
-- **PII sai redigida.** A inspeção e o replay só exibem texto redigido.
+  LangGraph; uma segunda cópia diverge da persistida. No console, `st.session_state`
+  guarda apenas o `thread_id` — Streamlit reexecuta o script a cada interação.
+- **Uma única ponte async.** A CLI chama `asyncio.run()` uma vez, em `main`; o console
+  passa tudo por `interfaces/async_bridge.AsyncBridge`, um loop numa thread.
+- **PII sai redigida.** A inspeção, o replay e o painel de trace só exibem texto redigido.
 
 Métricas de avaliação vivem em `tests/golden`, `tests/regression` e `scripts/`, nunca
-num adapter.
+num adapter. A aba de avaliação do console chama essas mesmas funções por
+`interfaces/evaluation.py`. Streamlit é o grupo opcional `console`
+(`uv sync --group console`).
 
 ## Armadilhas conhecidas
 
@@ -313,6 +317,10 @@ uv run --env-file .env python -m scripts.measure_end_to_end --scenario p999 --in
 
 # conversa manual, com o que aconteceu por baixo
 uv run --env-file .env python -m interfaces.cli --trace
+
+# console no navegador: sandbox com trace e controles da API, aba de avaliação
+uv sync --group console
+uv run --env-file .env streamlit run src/interfaces/streamlit_app.py
 
 # inspeção de uma conversa já executada
 uv run python -m interfaces.trace --conversation <id> --database <arquivo.sqlite>

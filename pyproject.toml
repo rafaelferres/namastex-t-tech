@@ -29,6 +29,10 @@ dev = [
     "pytest-asyncio>=0.24,<2",
     "ruff>=0.6,<1",
 ]
+# Console Streamlit (tarefa 14): opcional, fora da instalação principal.
+console = [
+    "streamlit>=1.40,<2",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -49,3 +53,14 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.12"
 strict = true
 mypy_path = "src"
+
+[[tool.mypy.overrides]]
+# Sem o grupo `console` instalado, streamlit não existe no ambiente de desenvolvimento.
+module = ["streamlit", "streamlit.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# A avaliação do console chama as funções de tests/ e scripts/; o mypy não entra nelas.
+module = ["scripts", "scripts.*", "tests", "tests.*"]
+follow_imports = "skip"
+ignore_missing_imports = true

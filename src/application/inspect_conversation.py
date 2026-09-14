@@ -12,7 +12,7 @@ from typing import Any, Protocol
 
 from application.tracing import QuoteAttempt, TraceReader
 from application.turns import TurnEvent, TurnReader
-from domain.handoff import HandoffDecision
+from domain.handoff import HandoffDecision, HandoffReason
 from domain.messages import OutboundMessage
 
 
@@ -97,3 +97,21 @@ def _slots(values: Mapping[str, Any]) -> tuple[SlotView, ...]:
         for name, item in values.items()
         if item is not None and item.get("valor") is not None
     )
+
+
+def ladder_level(report: TurnReport) -> str | None:
+    """Nível da escada que o turno atingiu: N0 chamada (com hedge), N1 retry, N2 escalação."""
+    if not report.tentativas:
+        return None
+    logical = next((item for item in report.tentativas if item.tentativa == 0), None)
+    if logical is not None and logical.origem == "cache":
+        return "fora da escada — cache do dia"
+    if logical is not None and logical.origem == "regra_local":
+        return "fora da escada — recusa local, sem rede"
+    if report.escalacao is not None and report.escalacao.motivo is HandoffReason.COTACAO:
+        return "N2 — escalação com snapshot"
+    physical = [item for item in report.tentativas if item.tentativa > 0]
+    # Chamada hedgeada é a mesma tentativa em paralelo, não um retry.
+    calls = sum(not item.hedge for item in physical)
+    level = f"N1 — retry ({calls} tentativas)" if calls > 1 else "N0 — chamada direta"
+    return level + (", com hedge" if any(item.hedge for item in physical) else "")

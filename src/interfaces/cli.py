@@ -39,7 +39,7 @@ _MEDIA: dict[str, tuple[MessageType, str]] = {
 }
 
 
-def _message(conversation_id: str, index: int, text: str) -> InboundMessage | None:
+def inbound_message(conversation_id: str, index: int, text: str) -> InboundMessage | None:
     command, _, argument = text.partition(" ")
     kind: MessageType = "text"
     body, ref = text, None
@@ -89,7 +89,7 @@ async def chat(
             await stack.session.close(conversation_id)
             write(f"Conversa {conversation_id} encerrada: slots e estado do grafo apagados.")
             return
-        message = _message(conversation_id, index, text)
+        message = inbound_message(conversation_id, index, text)
         if message is None:
             write("Comando desconhecido; /ajuda lista os comandos.")
             continue
