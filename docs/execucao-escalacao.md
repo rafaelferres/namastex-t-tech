@@ -20,8 +20,9 @@ O que se repete e o que não:
 
 - **Sorteio da API**: fixo por `QUOTE_SEED=1 QUOTE_FAILURE_RATE=1.0`, desde que a instância seja nova e
   esta seja a única conversa contra ela.
-- **Hedge**: depende de relógio de parede (a chamada lenta dorme 8 s, o hedge dispara
-  em ~1,5 s); estável na prática, não por construção.
+- **Hedge**: depende de relógio de parede. Ele dispara quando a chamada não voltou em
+  100 ms; falha que volta antes disso propaga na hora e fica com o retry. Estável na
+  prática, não por construção.
 - **Texto do LLM**: extrator e conversador são modelos reais; a redação da fala e, em
   raros casos, um slot podem variar entre execuções. Preço, franquia, carência e
   pro-rata nunca variam: vêm do payload da `/quote` por template.
@@ -62,8 +63,8 @@ nenhum slot coletado ainda
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1333 ms | — |
-| policy | ativa | 2 ms | — |
+| extract | ativa | 1336 ms | — |
+| policy | ativa | 3 ms | — |
 
 **Enviado ao lead**
 
@@ -93,8 +94,8 @@ nenhum slot coletado ainda
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1476 ms | — |
-| policy | ativa | 3 ms | — |
+| extract | ativa | 1442 ms | — |
+| policy | ativa | 2 ms | — |
 
 **Enviado ao lead**
 
@@ -126,8 +127,8 @@ nenhum slot coletado ainda
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1540 ms | — |
-| policy | ativa | 2 ms | — |
+| extract | ativa | 1722 ms | — |
+| policy | ativa | 1 ms | — |
 
 **Enviado ao lead**
 
@@ -153,24 +154,24 @@ nenhum slot coletado ainda
 
 - Aceitação: dentro das regras (idade 64, ano-modelo 2023)
 - Escalação: nenhuma regra disparou
+- Conversador: não sugeriu escalar; a política não escalou
 
 **Etapas do turno**
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1963 ms | — |
-| policy | ativa | 2 ms | — |
-| converse | ativa | 1550 ms | — |
+| extract | ativa | 2411 ms | — |
+| policy | ativa | 1 ms | — |
+| converse | ativa | 2581 ms | — |
+| decisao | segue | 0 ms | — |
 
 **Enviado ao lead**
 
-> Temos três opções de planos para seu Corolla 2023:
->
-> 1. Essencial: cobre colisão, roubo e furto.
-> 2. Completo: inclui colisão, roubo, furto, danos a terceiros e proteção de vidros.
-> 3. Premium: cobre tudo do Completo, mais carro reserva e assistência 24h.
->
-> Qual desses você prefere para seguirmos com a cotação?
+> Temos três planos disponíveis:
+> - Essencial: cobre colisão, roubo e furto.
+> - Completo: cobre colisão, roubo, furto, terceiros e vidros.
+> - Premium: cobre colisão, roubo, furto, terceiros, vidros, carro reserva e assistência 24h.
+> Qual dessas opções você gostaria de cotar para o seu Corolla 2023?
 
 ### Turno 5
 
@@ -193,27 +194,29 @@ nenhum slot coletado ainda
 
 - Aceitação: dentro das regras (idade 64, ano-modelo 2023)
 - Escalação: **escala** — regra `cotacao_esgotada`
+- Conversador: não sugeriu escalar; a política não escalou
 - Erro do turno: `quote`
 
 **Etapas do turno**
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1630 ms | — |
-| policy | ativa | 2 ms | — |
-| converse | ativa | 1431 ms | — |
-| quote | ativa | 94 ms | quote |
+| extract | ativa | 2399 ms | — |
+| policy | ativa | 1 ms | — |
+| converse | ativa | 986 ms | — |
+| decisao | segue | 0 ms | — |
+| quote | ativa | 58 ms | quote |
 | present | escalada | 0 ms | quote |
-| handoff | escalada | 94 ms | quote |
+| handoff | escalada | 27 ms | quote |
 
 **Tentativas de cotação**
 
 | tentativa | status | HTTP | latência | origem | hedge |
 |---|---|---|---|---|---|
-| 1 | unavailable | 500 | 20 ms | api | não |
-| 2 | unavailable | 502 | 3 ms | api | não |
-| 3 | unavailable | 502 | 3 ms | api | não |
-| desfecho | unavailable | — | 47 ms | api | não |
+| 1 | unavailable | 500 | 14 ms | api | não |
+| 2 | unavailable | 502 | 5 ms | api | não |
+| 3 | unavailable | 502 | 2 ms | api | não |
+| desfecho | unavailable | — | 44 ms | api | não |
 
 **Enviado ao lead**
 
@@ -234,7 +237,7 @@ Tentativas de cotação da conversa, como o vendedor as recebe:
 
 | tentativa | status | HTTP | latência | origem | hedge |
 |---|---|---|---|---|---|
-| 1 | unavailable | 500 | 20 ms | api | não |
-| 2 | unavailable | 502 | 3 ms | api | não |
-| 3 | unavailable | 502 | 3 ms | api | não |
-| desfecho | unavailable | — | 47 ms | api | não |
+| 1 | unavailable | 500 | 14 ms | api | não |
+| 2 | unavailable | 502 | 5 ms | api | não |
+| 3 | unavailable | 502 | 2 ms | api | não |
+| desfecho | unavailable | — | 44 ms | api | não |

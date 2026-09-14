@@ -20,8 +20,9 @@ O que se repete e o que não:
 
 - **Sorteio da API**: fixo por `QUOTE_SEED=1 QUOTE_FAILURE_RATE=0.20 QUOTE_SLOW_RATE=0.10`, desde que a instância seja nova e
   esta seja a única conversa contra ela.
-- **Hedge**: depende de relógio de parede (a chamada lenta dorme 8 s, o hedge dispara
-  em ~1,5 s); estável na prática, não por construção.
+- **Hedge**: depende de relógio de parede. Ele dispara quando a chamada não voltou em
+  100 ms; falha que volta antes disso propaga na hora e fica com o retry. Estável na
+  prática, não por construção.
 - **Texto do LLM**: extrator e conversador são modelos reais; a redação da fala e, em
   raros casos, um slot podem variar entre execuções. Preço, franquia, carência e
   pro-rata nunca variam: vêm do payload da `/quote` por template.
@@ -34,8 +35,8 @@ O que se repete e o que não:
 
 ## Resultado
 
-- Desfecho: `cotada`, em 6 turnos
-- Turnos com mensagem do harness, não do dataset (o dataset não traz data de vigência): 4
+- Desfecho: `cotada`, em 7 turnos
+- Turnos com mensagem do harness, não do dataset (o dataset não traz data de vigência): 4, 7
 - Cotação conferida contra a tabela no perfil real do lead: 1 de 1 consistente
 
 ## Conversa `conv_00028`
@@ -62,8 +63,8 @@ nenhum slot coletado ainda
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1102 ms | — |
-| policy | ativa | 4 ms | — |
+| extract | ativa | 1484 ms | — |
+| policy | ativa | 2 ms | — |
 
 **Enviado ao lead**
 
@@ -93,7 +94,7 @@ nenhum slot coletado ainda
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1369 ms | — |
+| extract | ativa | 1638 ms | — |
 | policy | ativa | 2 ms | — |
 
 **Enviado ao lead**
@@ -126,7 +127,7 @@ nenhum slot coletado ainda
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1517 ms | — |
+| extract | ativa | 1807 ms | — |
 | policy | ativa | 1 ms | — |
 
 **Enviado ao lead**
@@ -153,24 +154,20 @@ nenhum slot coletado ainda
 
 - Aceitação: dentro das regras (idade 31, ano-modelo 2011)
 - Escalação: nenhuma regra disparou
+- Conversador: não sugeriu escalar; a política não escalou
 
 **Etapas do turno**
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1892 ms | — |
+| extract | ativa | 3549 ms | — |
 | policy | ativa | 1 ms | — |
-| converse | ativa | 2261 ms | — |
+| converse | ativa | 1317 ms | — |
+| decisao | segue | 0 ms | — |
 
 **Enviado ao lead**
 
-> Temos três opções de planos com diferentes coberturas para o seu Renault Kwid 2011:
->
-> - Essencial: cobre colisão, roubo e furto.
-> - Completo: cobre colisão, roubo, furto, danos a terceiros e vidros.
-> - Premium: cobre tudo do Completo e ainda inclui carro reserva e assistência 24h.
->
-> Por favor, qual desses planos você prefere para continuarmos com a cotação?
+> Temos três opções de plano para o seu Renault Kwid 2011: o Essencial cobre colisão, roubo e furto. O Completo cobre também terceiros e vidros. E o Premium inclui cobertura para terceiros, vidros, carro reserva e assistência 24h. Qual dessas opções você prefere para sua cotação?
 
 ### Turno 5
 
@@ -192,15 +189,17 @@ nenhum slot coletado ainda
 
 - Aceitação: dentro das regras (idade 31, ano-modelo 2011)
 - Escalação: nenhuma regra disparou
+- Conversador: não sugeriu escalar; a política não escalou
 - Objeção: `caro_para_o_carro` (detectada por modelo)
 
 **Etapas do turno**
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1626 ms | — |
-| policy | ativa | 1 ms | — |
-| converse | ativa | 1440 ms | — |
+| extract | ativa | 1926 ms | — |
+| policy | ativa | 2 ms | — |
+| converse | ativa | 1477 ms | — |
+| decisao | segue | 0 ms | — |
 | objecao | modelo | 0 ms | caro_para_o_carro |
 | objection | ativa | 0 ms | — |
 
@@ -210,7 +209,7 @@ nenhum slot coletado ainda
 
 ### Turno 6
 
-`conv_00028:conv_00028:9` · rota: extract → policy → converse → quote → present
+`conv_00028:conv_00028:9` · rota: extract → policy → converse → objection
 
 **Mensagem do lead** (PII redigida na ingestão)
 
@@ -228,31 +227,72 @@ nenhum slot coletado ainda
 
 - Aceitação: dentro das regras (idade 31, ano-modelo 2011)
 - Escalação: nenhuma regra disparou
+- Conversador: não sugeriu escalar; a política não escalou
+- Objeção: `caro_para_o_carro` (detectada por modelo)
 
 **Etapas do turno**
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1454 ms | — |
-| policy | ativa | 1 ms | — |
-| converse | ativa | 2225 ms | — |
-| quote | ativa | 224 ms | — |
+| extract | ativa | 1984 ms | — |
+| policy | ativa | 2 ms | — |
+| converse | ativa | 1449 ms | — |
+| decisao | segue | 0 ms | — |
+| objecao | modelo | 0 ms | caro_para_o_carro |
+| objection | ativa | 0 ms | — |
+
+**Enviado ao lead**
+
+> Entendo. Posso comparar com um plano de cobertura mais enxuta para o seu carro.
+
+### Turno 7
+
+`conv_00028:conv_00028:12` · rota: extract → policy → converse → quote → present
+
+**Mensagem do lead** (PII redigida na ingestão)
+
+> Pode cotar o plano Completo.
+
+**Slots após a extração**
+
+| slot | valor | status | proveniência |
+|---|---|---|---|
+| idade | 31 | informado | digitado |
+| veiculo_ano | 2011 | informado | digitado |
+| plano_id | Completo | informado | digitado |
+| data_inicio | 2026-10-15 | informado | digitado |
+
+**Políticas**
+
+- Aceitação: dentro das regras (idade 31, ano-modelo 2011)
+- Escalação: nenhuma regra disparou
+- Conversador: não sugeriu escalar; a política não escalou
+
+**Etapas do turno**
+
+| etapa | status | latência | erro |
+|---|---|---|---|
+| extract | ativa | 2055 ms | — |
+| policy | ativa | 2 ms | — |
+| converse | ativa | 1558 ms | — |
+| decisao | segue | 0 ms | — |
+| quote | ativa | 228 ms | — |
 | present | cotada | 0 ms | — |
 
 **Tentativas de cotação**
 
 | tentativa | status | HTTP | latência | origem | hedge |
 |---|---|---|---|---|---|
-| 1 | unavailable | 500 | 35 ms | api | não |
-| 2 | unavailable | sem resposta | 131 ms | api | não |
-| 3 | quoted | 200 | 28 ms | api | sim |
-| desfecho | quoted | — | 213 ms | api | não |
+| 1 | unavailable | 500 | 19 ms | api | não |
+| 2 | unavailable | sem resposta | 161 ms | api | não |
+| 3 | quoted | 200 | 59 ms | api | sim |
+| desfecho | quoted | — | 221 ms | api | não |
 
 **Enviado ao lead**
 
-> Plano Essencial
-> Mensalidade: R$ 173,85.
-> Franquia: R$ 4.500,00.
-> Coberturas: colisão, roubo e furto.
+> Plano Completo
+> Mensalidade: R$ 304,36.
+> Franquia: R$ 3.000,00.
+> Coberturas: colisão, roubo, furto, danos a terceiros e vidros.
 > Carência de 30 dias para roubo e furto, contada do início da vigência.
-> Primeiro mês (pro-rata): R$ 95,34, referente a 17 dias de um mês de 31 dias.
+> Primeiro mês (pro-rata): R$ 166,91, referente a 17 dias de um mês de 31 dias.

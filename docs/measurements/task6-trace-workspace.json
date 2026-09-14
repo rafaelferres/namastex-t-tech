@@ -1,5 +1,5 @@
 {
-  "parent": "/mnt/c/Rafael/Entrevista/namastex-test-tecnico",
+  "parent": "<local>/Entrevista/namastex-test-tecnico",
   "samples": 500,
   "warmup": 20,
   "journal_mode": "wal",

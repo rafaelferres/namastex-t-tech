@@ -396,7 +396,7 @@ que a mudança transforma este ambiente em um loop de dois segundos.
 **Data:** 2026-09-11
 **Contexto:** pequenas operações em /mnt/c dominavam a coleta do pytest.
 **Alternativas:** otimizar testes; manter montagem; migrar workspace.
-**Decisão:** cópia ativa em /home/rafael/namastex-test-tecnico, preservando a
+**Decisão:** cópia ativa em ~/namastex-test-tecnico, preservando a
 original como backup. Os mesmos 381 testes passaram em 1,61 s, contra 7,79 s.
 Cliente e extrator usam duplos no loop rápido; o portão eval exige capturas reais.
 **Consequência:** credencial OpenRouter ausente impede obter acurácia, custo e
@@ -719,3 +719,33 @@ aplicação e o wiring, não para a CLI:
 A CLI mostrou ainda que um `.env` local com os valores da tarefa 8 derruba a conversa por
 limite de tokens: a composição de produção lê o ambiente, e o harness sobrescreve por
 cenário.
+
+## D-040 — Coerência de configuração verificada na partida, contra pisos medidos
+**Data:** 2026-09-14
+**Contexto:** a demonstração da tarefa 12 escalou por limite de tokens no quarto turno. O
+`.env` local guardava os valores da tarefa 8: timeout de 2 s, teto de 2,5 s e 4.000 tokens.
+O harness nunca viu, porque fixa os valores por cenário, e a verificação de partida (D-035)
+só testava conectividade. É a mesma família do 404: caminho de produção que nenhum teste
+validava.
+**Alternativas:** fixar os valores no código e remover as variáveis; validar só o formato
+(positivo e finito), como o `LLMConfig` já fazia; gerar o `.env.example` a partir do código;
+comparar a configuração com pisos medidos.
+**Decisão:** pisos num único lugar, `infrastructure/llm/config.py`: `LLM_P999_SECONDS = 6,9`
+(D-038) e `MAX_CONVERSATION_TOKENS = 10.095`, ao lado de `ENV_DEFAULTS`, de onde saem
+os padrões do `LLMConfig`. `verify_configuration` roda em `open_live_stack`, antes de
+qualquer rede, e junta as violações num único `StartupCheckError`:
+- timeout do LLM abaixo do p99.9 medido;
+- orçamento do turno abaixo da soma dos tetos das etapas;
+- limite de tokens por conversa abaixo do máximo medido.
+
+O teto por chamada não tem piso próprio, porque o `LLMConfig` já exige teto ≥ timeout.
+Variável ausente cai no padrão, com aviso no log. O `.env.example` é conferido, não gerado:
+um teste o compara com `ENV_DEFAULTS` e passa seus valores pela verificação. A verificação
+fica fora de `open_sales_stack` porque o harness roda, de propósito, cenários abaixo do piso
+(`antes` e `depois`).
+**Consequência:** com o `.env` da tarefa 8, a CLI sai com código 1 e a mensagem traz o valor
+configurado e o medido ("LLM_TIMEOUT_SECONDS: configurado 2 s, abaixo do p99.9 medido de
+6.9 s (D-038)"). Os pisos valem para um provedor e um período, e já se moveram uma vez: o
+máximo de tokens era 9.510 em D-034 e a rodada da tarefa 13 mediu 10.095
+(`docs/measurements/task13-e2e.json`), ainda com 37% de folga até os 16.000. Medição nova
+exige atualizar a constante.

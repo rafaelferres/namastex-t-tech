@@ -26,11 +26,12 @@ partes a subagentes (02 a 17). O Claude Code assumiu a partir da tarefa 9 (18).
 | 15 | [15-codex-2026-09-11-1136.md](15-codex-2026-09-11-1136.md) | Codex CLI (subagente) | Tarefa 9: revisão do conversador |
 | 16 | [16-codex-2026-09-11-1144.md](16-codex-2026-09-11-1144.md) | Codex CLI (subagente) | Tarefa 9: outbox de entrega |
 | 17 | [17-codex-2026-09-11-1144.md](17-codex-2026-09-11-1144.md) | Codex CLI (subagente) | Tarefa 9: revisão do harness de avaliação |
-| 18 | [18-claude-code-2026-09-11-1153.md](18-claude-code-2026-09-11-1153.md) | Claude Code | Sessão principal: tarefas 9, 9.1, 9.2, 10 e 11. Exportada ao fim da tarefa 11 |
+| 18 | [18-claude-code-2026-09-11-1153.md](18-claude-code-2026-09-11-1153.md) | Claude Code | Sessão principal: tarefas 9, 9.1, 9.2, 10, 11 e 12, com a PR de cada uma |
 | 19 | [19-claude-code-2026-09-11-1632.md](19-claude-code-2026-09-11-1632.md) | Claude Code | Resumo automático de sessão (tarefas 9.2 e 10) |
 | 20 | [20-claude-code-2026-09-11-1643.md](20-claude-code-2026-09-11-1643.md) | Claude Code | Resumo automático de sessão (tarefa 10) |
 | 21 | [21-claude-code-2026-09-11-1647.md](21-claude-code-2026-09-11-1647.md) | Claude Code | Resumo automático de sessão (tarefa 10, PR aberta) |
 | 22 | [22-claude-code-2026-09-11-1709.md](22-claude-code-2026-09-11-1709.md) | Claude Code | Resumo automático de sessão (tarefa 10 concluída) |
+| 23 | [23-claude-code-2026-09-14-0903.md](23-claude-code-2026-09-14-0903.md) | Claude Code | Tarefa 13: verificação de configuração, hedge, documentos, rodadas no commit final e entrega. Exportada antes do commit, então termina pouco antes dele |
 
 As sessões 19 a 22 são chamadas de resumo que o Claude Code fez sozinho durante a
 sessão 18: um pedido e uma resposta, sem ferramentas.
@@ -71,4 +72,8 @@ Também passou por redação:
   `*_TOKEN=` e `*_SECRET=` viram `[SEGREDO]`;
 - CPF, telefone, CEP e placa viram `[CPF]`, `[TELEFONE]`, `[CEP]` e `[PLACA]`. Os dados
   do dataset são sintéticos, mas foram redigidos por precaução;
-- caminhos do diretório pessoal viram `~`.
+- caminhos do diretório pessoal viram `~`; os demais caminhos locais do disco viram
+  `<local>`, e o nome da pasta de projeto do Claude Code, `<projeto>`.
+
+Nenhum arquivo contém chave de API: a varredura por `sk-`, `api_key` e `Bearer ` em todo o
+histórico do git só encontra nomes de variável e valores de teste.

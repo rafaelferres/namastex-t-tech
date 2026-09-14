@@ -110,15 +110,18 @@ src/
   application/     casos de uso e portas (Protocol)
   agent/           LangGraph: grafo, nós, prompts, templates
   infrastructure/  adapters: httpx, sqlite3
-  interfaces/      webhook FastAPI, CLI, replay do dataset, console Streamlit
+  interfaces/      cli (conversa), replay do dataset, trace (inspeção), rendering
 ```
+
+Não existem webhook de WhatsApp nem console Streamlit. Não conserte nem estenda
+algo que não está em `src/`.
 
 `domain/` e `application/` não importam `langgraph`, `httpx` nem `sqlite3`. O grafo é detalhe de orquestração, não o núcleo.
 
 ### Cadeia de cotação
 
 ```
-Guard → Cache → Retry → Hedge → Trace → Http
+ApplicationTrace → Guard → Cache → Retry → Hedge → WireTrace → Http
 ```
 
 Cada camada é um decorator que implementa `QuoteProvider`. Adicionar
@@ -131,8 +134,9 @@ comportamento = adicionar classe, nunca editar as existentes.
   TTL até meia-noite. Cacheia `Declined` também. Erro de cache nunca propaga.
 - **Retry** — backoff com jitter, teto de tentativas **e** teto de tempo total.
   Captura apenas `QuoteUnavailable`.
-- **Hedge** — dispara a segunda chamada após ~1,5s. Existe só para a cauda de
-  latência (10% das chamadas dormem 8s). Falha rápida é problema do Retry.
+- **Hedge** — dispara a segunda chamada após 100 ms (mais de 2× o p99 medido do
+  caminho rápido, `QuoteConfig.hedge_delay`). Existe só para a cauda de latência
+  (10% das chamadas dormem 8s). Falha rápida propaga na hora e é problema do Retry.
 - **Trace** — colado no HTTP, registra cada chamada física em `quote_attempts`,
   inclusive as hedgeadas.
 
@@ -147,41 +151,32 @@ implementando um `Protocol` comum. O LLM pode sugerir handoff como sinal
 adicional; quem decide é a política. Grave os dois — a divergência é material de
 análise.
 
-### Console Streamlit
+### Adapters
 
-`src/interfaces/streamlit_app.py` é o **quarto adapter**, ao lado de webhook, CLI
-e replay. Ele consome exatamente os mesmos casos de uso.
+Existem três, em `src/interfaces/`, e todos consomem os mesmos casos de uso:
+
+| Adapter | Papel |
+|---|---|
+| `cli` | conversa no terminal; `--trace` mostra slots, políticas e tentativas; `--conversation` retoma |
+| `replay` | envelopes redigidos de conversas do dataset; o harness fim a fim usa os mesmos |
+| `trace` | inspeção de uma cotação ou de uma conversa inteira, só leitura |
+
+A composição de produção é `open_live_stack` em `src/infrastructure/wiring.py`.
 
 Regras:
 
-- **Nunca chame o grafo, a cadeia de cotação ou os repositórios direto do app.**
-  Se o console precisar de algo que os casos de uso não expõem, o buraco está na
-  camada de aplicação, não no Streamlit.
-- **Nenhuma lógica de negócio no arquivo do app.** Ele monta widget, chama caso de
-  uso e desenha resultado. Nada mais.
-- **`st.session_state` guarda apenas o `thread_id`.** O estado da conversa vive no
-  checkpointer do LangGraph. Streamlit reexecuta o script inteiro a cada
-  interação; manter estado de conversa em `session_state` cria uma segunda cópia
-  que diverge da persistida.
-- **Streamlit é síncrono, a cadeia é async.** Use uma ponte única
-  (`asyncio.run()` em um helper), nunca `asyncio.run()` espalhado por callback.
-- **PII vem redigida por padrão.** Se houver alternância para ver o texto original,
-  ela é explícita e registra que foi acionada.
+- **Nunca chame o grafo, a cadeia de cotação ou os repositórios direto do adapter.**
+  Se ele precisar de algo que os casos de uso não expõem, o buraco está na camada de
+  aplicação ou no wiring (foi assim com `Ingestor.next_index` e `SalesStack.inspector`).
+- **Nenhuma lógica de negócio no adapter.** Ele traduz entrada em `InboundMessage`,
+  chama o caso de uso e renderiza o resultado.
+- **O adapter guarda só o id da conversa.** O estado vive no checkpointer do
+  LangGraph; uma segunda cópia diverge da persistida.
+- **Uma única ponte async.** A CLI chama `asyncio.run()` uma vez, em `main`.
+- **PII sai redigida.** A inspeção e o replay só exibem texto redigido.
 
-O console tem duas abas:
-
-**Sandbox** — conversa com o agente e um painel de trace ao vivo: slots extraídos
-a cada turno, regras de handoff avaliadas, linhas de `quote_attempts` com status,
-latência e origem, e qual nível da escada de degradação foi atingido. Controles
-para forçar falha (`QUOTE_FAILURE_RATE`) e fixar `QUOTE_SEED`.
-
-**Avaliação** — dispara o golden set de extração e o oráculo negativo das 751
-recusas, mostra a tabela de resultados e compara com a baseline humana do
-histórico.
-
-A aba de avaliação **não reimplementa** as métricas: chama o mesmo código de
-`tests/golden` e `tests/regression`. Métrica que só existe na UI não é
-verificável em CI.
+Métricas de avaliação vivem em `tests/golden`, `tests/regression` e `scripts/`, nunca
+num adapter.
 
 ## Armadilhas conhecidas
 
@@ -311,15 +306,16 @@ uv run pytest --cov=src --cov-report=term-missing
 uv run ruff check src tests
 uv run mypy src
 
-# avaliação (consome API de LLM, rode sob demanda)
-uv run pytest tests/golden -m eval        # extração vs 2.500 casos
-uv run pytest tests/regression -m eval    # as 751 recusas
+# avaliação
+uv run pytest -m eval                     # extração por replay das capturas, sem rede
+# as 751 recusas pelo agente real (consome LLM, rode sob demanda)
+uv run --env-file .env python -m scripts.measure_end_to_end --scenario p999 --ineligible
 
-# console de teste e avaliação
-uv run streamlit run src/interfaces/streamlit_app.py
+# conversa manual, com o que aconteceu por baixo
+uv run --env-file .env python -m interfaces.cli --trace
 
-# conversa manual
-uv run python -m interfaces.cli
+# inspeção de uma conversa já executada
+uv run python -m interfaces.trace --conversation <id> --database <arquivo.sqlite>
 
 # replay de uma conversa do dataset
 uv run python -m interfaces.replay --conversation conv_00013
@@ -329,7 +325,7 @@ uv run python -m interfaces.replay --conversation conv_00013
 
 ```bash
 QUOTE_SEED=42 docker compose up              # falhas reprodutíveis
-QUOTE_FAILURE_RATE=1.0 docker compose up     # força a escada até o N3
+QUOTE_FAILURE_RATE=1.0 docker compose up     # força a escada até o N2 (escalação)
 ```
 
 Nunca escreva teste que dependa da sorte do sorteio de falha.
@@ -426,8 +422,8 @@ Uma linha por chamada física.
 - [ ] `base_mensal` e multiplicadores não aparecem em nenhum prompt, log ou contexto
 - [ ] `422` e `400` não são retentados
 - [ ] Ordenação de mensagem usa `message_index`
-- [ ] Nenhuma PII em log, em mensagem de exceção ou na tela do console
-- [ ] O console Streamlit não ganhou lógica que os casos de uso não tenham
+- [ ] Nenhuma PII em log, em mensagem de exceção ou na saída da CLI e da inspeção
+- [ ] Nenhum adapter (CLI, replay, trace) ganhou lógica que os casos de uso não tenham
 - [ ] Decisão não óbvia virou entrada em `docs/DECISIONS.md`
 - [ ] `docs/ARQUITETURA.md` continua descrevendo o sistema como ele é
 - [ ] `uv run pytest` e `uv run ruff check` passam

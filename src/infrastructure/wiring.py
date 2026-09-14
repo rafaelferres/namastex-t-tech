@@ -34,7 +34,7 @@ from application.startup import verify_dependencies
 from application.tracing import Correlation, CorrelationProvider, current_turn
 from domain.handoff import HandoffDecision
 from infrastructure.llm.budget import BudgetedLLMClient
-from infrastructure.llm.config import LLMConfig
+from infrastructure.llm.config import LLMConfig, verify_configuration
 from infrastructure.llm.http import OpenRouterLLMClient
 from infrastructure.media.resolver import LLMMediaResolver
 from infrastructure.persistence.attempts import SQLiteAttempts
@@ -129,6 +129,9 @@ async def open_live_stack(
 ) -> AsyncIterator[SalesStack]:
     """Composição de produção para adapters de canal: LLM e API de cotação reais."""
     config = LLMConfig.from_env()
+    turn_config = turn_config or TurnConfig()
+    # Antes de qualquer rede: o `.env` da tarefa 8 escalava por tokens no quarto turno.
+    verify_configuration(config, turn_config)
     clock = SystemClock()
     async with (
         httpx.AsyncClient(base_url=quote_url) as quote_client,
@@ -144,7 +147,7 @@ async def open_live_stack(
             clock=clock,
             sleep=asyncio.sleep,
             rng=random.random,  # ponto de composição: o gerador real entra só aqui
-            turn_config=turn_config or TurnConfig(),
+            turn_config=turn_config,
             media=LLMMediaResolver(llm),
         ) as stack:
             yield stack

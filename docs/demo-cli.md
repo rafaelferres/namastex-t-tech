@@ -1,35 +1,37 @@
 # Demonstração da CLI
 
-Sessão real de `python -m interfaces.cli --trace`:
+Sessão real de `python -m interfaces.cli --trace`, gravada no commit final (tarefa 13):
 - extrator e conversador reais, via OpenRouter;
-- API do desafio numa instância nova, com `QUOTE_SEED=1`, 20% de falha e 10% de lentidão;
+- API do desafio numa instância nova, com `QUOTE_SEED=14`, 20% de falha e 10% de lentidão;
+- `.env` com os valores do `.env.example`, aceitos pela verificação de partida (D-040);
 - quatro mensagens de roteiro pela entrada padrão.
 
 Cada resposta do agente vem seguida do turno por baixo, que é o que o `--trace` imprime. A mensagem do lead aparece em cada turno já redigida.
 
-**A escada aparece no turno 4:**
-1. A primeira chamada leva HTTP 500 depois de 108 ms. Como passou da janela de 100 ms, o hedge já tinha disparado.
-2. O hedge sorteia uma chamada lenta e fica sem resposta no timeout de 2 s.
-3. O retry faz a terceira chamada, que cota.
+**A escada aparece no turno 4 — falha, retry, cotação:**
+1. A primeira chamada leva HTTP 503 em 24 ms. A falha volta antes da janela de 100 ms, então o hedge não dispara: falha rápida propaga na hora e fica com o retry.
+2. O retry faz a segunda chamada, que cota em 37 ms. A cotação lógica inteira leva 89 ms.
+3. O lead recebe o preço da tabela, com carência e pro-rata. Não percebe a falha.
 
-O lead recebe o preço da tabela, com carência e pro-rata.
+A semente 14 foi escolhida porque o sorteio da API começa com uma falha seguida de um sucesso. O caminho com chamada lenta resgatada pelo hedge está em [`execucao-completa.md`](execucao-completa.md), e a escada esgotada, em [`execucao-escalacao.md`](execucao-escalacao.md).
 
 ```bash
 # API numa instância nova: o sorteio começa na primeira /quote
 cd ../namastex-fde-challenge/quote-service
-QUOTE_SEED=1 QUOTE_FAILURE_RATE=0.20 QUOTE_SLOW_RATE=0.10 \
-  uv run --with fastapi --with uvicorn uvicorn app.main:app --port 18011
+QUOTE_SEED=14 QUOTE_FAILURE_RATE=0.20 QUOTE_SLOW_RATE=0.10 \
+  uv run --with fastapi --with uvicorn uvicorn app.main:app --port 18015
 # a conversa, por roteiro na entrada padrão
 printf '%s\n' "Oi, quero fazer um seguro para o meu carro" \
   "Tenho 32 anos, é um Onix 2020, cep 01310-100" "Pode começar em 15/10/2026" \
   "Quero o plano Completo" "/sair" \
   | uv run --env-file .env python -m interfaces.cli --trace \
-      --quote-url http://127.0.0.1:18011 --conversation cli-demo --database /tmp/cli-demo.sqlite
+      --quote-url http://127.0.0.1:18015 --conversation cli-demo --database /tmp/cli-demo.sqlite
 ```
 
-**Duas observações:**
+**Três observações:**
 - A redação do LLM varia entre execuções. Preço, franquia, carência e pro-rata não variam: vêm do payload da `/quote`, por template.
-- Esta sessão rodou com `LLM_TIMEOUT_SECONDS=7.0 LLM_BUDGET_SECONDS=7.0 LLM_CONVERSATION_TOKEN_LIMIT=16000` exportados. O `.env` local ainda tinha os valores da tarefa 8, e com eles a conversa escalou por limite de tokens no turno 4. O `.env.example` já traz os valores certos.
+- A demonstração da tarefa 12 (semente 1) mostrava um HTTP 500 depois de 108 ms com o hedge já disparado. O hedge disparou pela latência — a chamada não tinha voltado em 100 ms —, não pela falha. O teste `test_fast_http_500_is_a_single_call_without_waiting_for_the_window` (`tests/unit/test_hedge.py`) confirma que falha rápida produz uma chamada só, sem esperar a janela.
+- Naquela sessão, o `.env` local ainda tinha os valores da tarefa 8 e a conversa escalou por limite de tokens. Hoje a CLI nem parte com eles: `Não foi possível iniciar: Configuração inválida na partida — LLM_TIMEOUT_SECONDS: configurado 2 s, abaixo do p99.9 medido de 6.9 s (D-038); LLM_CONVERSATION_TOKEN_LIMIT: configurado 4000, abaixo do máximo medido de …`.
 
 ---
 Conversa cli-demo. /ajuda lista os comandos.
@@ -57,7 +59,7 @@ nenhum slot coletado ainda
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1103 ms | — |
+| extract | ativa | 1260 ms | — |
 | policy | ativa | 3 ms | — |
 
 **Enviado ao lead**
@@ -90,20 +92,20 @@ nenhum slot coletado ainda
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1538 ms | — |
-| policy | ativa | 2 ms | — |
+| extract | ativa | 1633 ms | — |
+| policy | ativa | 1 ms | — |
 
 **Enviado ao lead**
 
 > Pode informar ou confirmar a data desejada para início da vigência?
 
-**Agente:** Temos três opções de planos para você escolher:
+**Agente:** Temos três opções de plano para o seguro do seu Onix 2020: 
 
-• Essencial: cobre colisão, roubo e furto.
-• Completo: cobre colisão, roubo, furto, danos a terceiros e vidros.
-• Premium: cobre colisão, roubo, furto, terceiros, vidros, carro reserva e assistência 24h.
+- Essencial: cobre colisão, roubo e furto.
+- Completo: cobre colisão, roubo, furto, terceiros e vidros.
+- Premium: cobre colisão, roubo, furto, terceiros, vidros, carro reserva e assistência 24h.
 
-Qual dessas opções você prefere para seguir com a cotação?
+Qual dessas opções você prefere para fazermos a cotação?
 ### Turno 3
 
 `cli-demo:cli-demo:2` · rota: extract → policy → converse
@@ -130,24 +132,23 @@ Qual dessas opções você prefere para seguir com a cotação?
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 2612 ms | — |
-| policy | ativa | 1 ms | — |
-| converse | ativa | 1622 ms | — |
+| extract | ativa | 1882 ms | — |
+| policy | ativa | 2 ms | — |
+| converse | ativa | 1761 ms | — |
 | decisao | segue | 0 ms | — |
 
 **Enviado ao lead**
 
-> Temos três opções de planos para você escolher:
+> Temos três opções de plano para o seguro do seu Onix 2020: 
 >
-> • Essencial: cobre colisão, roubo e furto.
-> • Completo: cobre colisão, roubo, furto, danos a terceiros e vidros.
-> • Premium: cobre colisão, roubo, furto, terceiros, vidros, carro reserva e assistência 24h.
+> - Essencial: cobre colisão, roubo e furto.
+> - Completo: cobre colisão, roubo, furto, terceiros e vidros.
+> - Premium: cobre colisão, roubo, furto, terceiros, vidros, carro reserva e assistência 24h.
 >
-> Qual dessas opções você prefere para seguir com a cotação?
+> Qual dessas opções você prefere para fazermos a cotação?
+quote_http_unavailable HTTP 503: {"error":"upstream_unavailable","message":"Servico de cotacao temporariamente indisponivel. Tente novamente."}
 
-quote_http_unavailable HTTP 500: {"error":"upstream_unavailable","message":"Servico de cotacao temporariamente indisponivel. Tente novamente."}
-quote_http_unavailable transporte: ReadTimeout
-Agente: Plano Completo
+**Agente:** Plano Completo
 Mensalidade: R$ 241,38.
 Franquia: R$ 3.000,00.
 Coberturas: colisão, roubo, furto, danos a terceiros e vidros.
@@ -180,21 +181,20 @@ Primeiro mês (pro-rata): R$ 132,37, referente a 17 dias de um mês de 31 dias.
 
 | etapa | status | latência | erro |
 |---|---|---|---|
-| extract | ativa | 1936 ms | — |
-| policy | ativa | 1 ms | — |
-| converse | ativa | 909 ms | — |
+| extract | ativa | 2220 ms | — |
+| policy | ativa | 2 ms | — |
+| converse | ativa | 1258 ms | — |
 | decisao | segue | 0 ms | — |
-| quote | ativa | 2176 ms | — |
+| quote | ativa | 104 ms | — |
 | present | cotada | 0 ms | — |
 
 **Tentativas de cotação**
 
 | tentativa | status | HTTP | latência | origem | hedge |
 |---|---|---|---|---|---|
-| 1 | unavailable | 500 | 108 ms | api | não |
-| 2 | unavailable | sem resposta | 2007 ms | api | sim |
-| 3 | quoted | 200 | 19 ms | api | não |
-| desfecho | quoted | — | 2166 ms | api | não |
+| 1 | unavailable | 503 | 24 ms | api | não |
+| 2 | quoted | 200 | 37 ms | api | não |
+| desfecho | quoted | — | 89 ms | api | não |
 
 **Enviado ao lead**
 
@@ -204,5 +204,4 @@ Primeiro mês (pro-rata): R$ 132,37, referente a 17 dias de um mês de 31 dias.
 > Coberturas: colisão, roubo, furto, danos a terceiros e vidros.
 > Carência de 30 dias para roubo e furto, contada do início da vigência.
 > Primeiro mês (pro-rata): R$ 132,37, referente a 17 dias de um mês de 31 dias.
-
 Para retomar: python -m interfaces.cli --conversation cli-demo

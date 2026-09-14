@@ -121,7 +121,7 @@
     "quote_aceita": 1749,
     "quote_422": 751,
     "sem_cep_no_texto": 0,
-    "data_da_api": "2026-09-11"
+    "data_da_api": "2026-09-14"
   },
   "frase_de_cobertura": {
     "valor": 2500,
@@ -212,6 +212,8 @@
     "valor": {
       "handoff": 0,
       "atendente": 0,
+      "humano": 0,
+      "supervisor": 0,
       "instabilidade": 0,
       "carência": 0,
       "pro-rata": 0,

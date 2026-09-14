@@ -42,8 +42,8 @@ CEP_NAIVE = re.compile(r"\d{5}-?\d{3}")
 COMPETITOR = re.compile(r"\.\.\. a (.+) me ofereceu menos")
 COVERAGE = "Cobre colisao, roubo e furto"
 ABSENT_TERMS = (
-    "handoff", "atendente", "instabilidade", "carência", "pro-rata", "pro rata", "prorata",
-    "data de vigência", "vigência", "sinistro", "cancelamento",
+    "handoff", "atendente", "humano", "supervisor", "instabilidade", "carência", "pro-rata",
+    "pro rata", "prorata", "data de vigência", "vigência", "sinistro", "cancelamento",
 )
 
 
