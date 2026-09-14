@@ -749,3 +749,32 @@ configurado e o medido ("LLM_TIMEOUT_SECONDS: configurado 2 s, abaixo do p99.9 m
 máximo de tokens era 9.510 em D-034 e a rodada da tarefa 13 mediu 10.095
 (`docs/measurements/task13-e2e.json`), ainda com 37% de folga até os 16.000. Medição nova
 exige atualizar a constante.
+
+## D-041 — Console Streamlit: API como processo filho, escada lida do trace, avaliação reusada
+**Data:** 2026-09-14
+**Contexto:** o console é o quarto adapter. Três pontos não tinham resposta óbvia: como
+variar a taxa de falha ao vivo, se a API lê `QUOTE_FAILURE_RATE` só na partida; onde
+calcular o nível da escada que o painel mostra; e como a aba de avaliação chega às funções
+de `tests/` e `scripts/`, que não são pacotes instalados.
+**Alternativas:** para a falha, um decorator de injeção de falha na cadeia, ou pedir ao
+avaliador que reinicie a API à mão; para a escada, calcular no app ou num nó do grafo; para
+a avaliação, copiar as métricas para `src/` ou chamar os scripts por subprocesso.
+**Decisão:**
+- **Falha ao vivo:** o console sobe a API do desafio como processo filho
+  (`interfaces/quote_api.py`) e a reinicia com outra taxa e outra semente. A escada
+  demonstrada é a da API real; um injetor na cadeia mostraria uma falha que a API nunca
+  produz e seria um caminho de código só para demonstração.
+- **Nível da escada:** `ladder_level` fica em `application/inspect_conversation.py`, lido
+  das tentativas e da escalação já persistidas. Foi o buraco que o console expôs: a CLI
+  mostrava a tabela de tentativas, mas ninguém dizia o nível. Entrou no `render_turn`, então
+  a CLI e o log de execução ganham a linha também.
+- **Avaliação:** `interfaces/evaluation.py` põe a raiz do repositório no `sys.path` e
+  importa `run_isolated`, `negative_cases` e `measure` diretamente. Os números da aba vêm dos
+  JSON que essas funções gravaram; as rodadas ao vivo chamam as mesmas funções, em amostra
+  por padrão.
+
+`st.session_state` guarda só o `thread_id`; pilha, ponte async e processos da API ficam
+num recurso de processo (`st.cache_resource`), sem estado de conversa.
+**Consequência:** o console exige o repositório do desafio ao lado e roda em Linux ou WSL
+(o processo filho é encerrado por grupo de processos). A aba de avaliação só funciona a
+partir de um clone do repositório, não de um pacote instalado.

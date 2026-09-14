@@ -15,8 +15,11 @@ Desafio técnico FDE / AI Engineer — Namastex.
 Ele é exercitado de ponta a ponta pelas conversas reais do dataset, e dá para conversar com
 ele no terminal com `python -m interfaces.cli`.
 
-**O que não existe.** Não há webhook de WhatsApp nem console. O ponto de entrada é o
-envelope de mensagem, que hoje o replay do dataset e a CLI produzem. Ver
+Dá também para conversar no navegador, com o trace de cada turno ao lado, pelo console
+Streamlit ([Console](#console-streamlit)).
+
+**O que não existe.** Não há webhook de WhatsApp. O ponto de entrada é o envelope de
+mensagem, que hoje o replay do dataset, a CLI e o console produzem. Ver
 [Limitações](#limitações).
 
 ---
@@ -171,6 +174,30 @@ latência e hedge. Uma sessão real, em que a cotação falha, é retentada e sa
 A partida recusa configuração incoerente antes de qualquer rede: timeout do LLM abaixo do
 p99.9 medido, orçamento do turno abaixo da soma das etapas ou limite de tokens abaixo do
 máximo medido. A mensagem traz o valor configurado e o medido (D-040).
+
+### Console Streamlit
+
+![Sandbox do console: a conversa à esquerda e, à direita, o trace do turno com slots, políticas, nível da escada e tentativas de cotação](docs/console-sandbox.png)
+
+```bash
+uv sync --group console            # Streamlit é opcional, fora da instalação principal
+uv run --env-file .env streamlit run src/interfaces/streamlit_app.py
+```
+
+O console sobe a API do desafio como processo filho, a partir de
+`../namastex-fde-challenge/quote-service` (ou `AUTOSEGURO_QUOTE_SERVICE`), para poder
+reiniciá-la com outra taxa de falha e outra semente.
+
+- **Sandbox:** conversa com o agente e, ao lado, o mesmo relatório redigido do `--trace`
+  (slots com proveniência, políticas, nível da escada, tentativas com hedge e guardrail).
+  Na barra lateral, a taxa de falha e o `QUOTE_SEED` reiniciam a API ao vivo: em 20% o retry
+  recupera; em 100% a escada esgota e a conversa escala com snapshot. Imagem e documento
+  entram pelos botões de mídia. A mesma cotação no mesmo dia sai do cache, fora da escada;
+  "Banco novo" limpa.
+- **Avaliação:** os números desta página, lidos dos arquivos que as rodadas gravaram, cada
+  um com a sua ressalva, e botões para rodar de novo com as mesmas funções de `tests/golden`,
+  `tests/regression` e `scripts/`. Por padrão em amostra; o conjunto completo é escolha
+  explícita, porque consome tokens e tempo.
 
 O agente também roda sobre conversas do dataset:
 
@@ -373,7 +400,8 @@ src/
   agent/           LangGraph: grafo, nós, prompts, templates
   infrastructure/  quote/, planos/, llm/, media/, handoff/, persistence/, tracing/,
                    privacy/, dataset/, http_errors.py, wiring.py
-  interfaces/      cli (conversa), replay, trace (inspeção), rendering, conversation_report
+  interfaces/      cli (conversa), streamlit_app (console), replay, trace (inspeção),
+                   rendering, conversation_report, evaluation, async_bridge, quote_api
 ```
 
 Arquitetura hexagonal, com dependência sempre para dentro. `domain/` e `application/` não
@@ -700,8 +728,8 @@ Um nível intermediário meia-boca é pior que um handoff honesto.
 
 ## Limitações
 
-- **Não há canal de rede.** Não existe webhook de WhatsApp nem console Streamlit.
-  - O agente é exercitado pelo replay do dataset e pela CLI.
+- **Não há canal de rede.** Não existe webhook de WhatsApp.
+  - O agente é exercitado pelo replay do dataset, pela CLI e pelo console Streamlit.
   - O debounce de rajada é exercitado pelo replay e por testes com tempo virtual, não por um canal real.
 - **A entrega da outbox não está ligada.**
   - Decisões de escalação, efeitos e respostas ao lead são gravados.
@@ -826,7 +854,7 @@ o que cada fase entregou, com o número do portão de saída, em
 93,88% em ano, mediam progresso na conversa sob um corte de 2 s por chamada, não
 acurácia; a extração isolada está em [Resultados](#resultados).
 
-Validação no commit final (tarefa 13):
-- `uv run pytest -m "not slow"`: **682 passed**;
-- `uv run pytest` com o corpus local: **695 passed**;
-- ruff e mypy limpos.
+Validação (tarefa 14, com o console):
+- `uv run pytest -m "not slow"`: **708 passed**;
+- `uv run pytest` com o corpus local: **721 passed**;
+- ruff e mypy limpos, com e sem o grupo `console` instalado.

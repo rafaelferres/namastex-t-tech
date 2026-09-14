@@ -4,6 +4,41 @@ Mudanças relevantes por fase, no formato Keep a Changelog.
 
 ## [Unreleased]
 
+### Added — Tarefa 14, 2026-09-14
+
+- Console Streamlit (`src/interfaces/streamlit_app.py`), quarto adapter, no grupo opcional
+  `console` (D-041):
+  - **Sandbox:** conversa no navegador e, ao lado, o mesmo relatório redigido do `--trace`.
+    A barra lateral reinicia a API do desafio com outra taxa de falha e outra semente, e
+    injeta imagem e documento.
+  - **Avaliação:** os números do README lidos dos arquivos das rodadas, cada um com a sua
+    ressalva, e rodadas ao vivo pelas mesmas funções de `tests/golden`, `tests/regression`
+    e `scripts/`, em amostra por padrão.
+- `st.session_state` guarda só o `thread_id`; toda chamada async passa por `AsyncBridge`,
+  um loop numa thread. Regras verificadas no código-fonte por `tests/unit/test_console.py`.
+- Buraco que o console expôs, resolvido na aplicação: `ladder_level`, o nível da escada
+  atingido no turno (N0 chamada e hedge, N1 retry, N2 escalação; cache e recusa local fora
+  da escada). Entrou no `render_turn`, então a CLI e os logs de execução mostram também, com
+  a linha de guardrail quando houver.
+
+- Verificado num Chromium real, dirigindo o console:
+  - a 20% de falha e semente 14, a conversa chega à cotação e o trace mostra
+    "N1 — retry (2 tentativas)": 503 em 12 ms, retry cotado;
+  - a 100% de falha e banco novo, três falhas rápidas e "N2 — escalação com snapshot", com o
+    snapshot que o vendedor recebe;
+  - a aba de avaliação mostra os números do README e roda, em amostra, extração por replay
+    (100/100), oráculo (751 de 2.500) e agente real (10 conversas: 5/5 elegíveis sem
+    documento cotadas, 5/5 consistentes e com carência, US$ 0,07).
+
+### Fixed — Tarefa 14
+
+- Na tela do Streamlit, "R$ 241,38 … R$ 3.000,00" era lido como fórmula LaTeX e o preço
+  aparecia truncado. `escape_dollar` escapa o cifrão na conversa e no trace.
+- A aba de avaliação arredondava 2.499/2.500 para "100,0%", contra os 99,96% do README;
+  `format_ratio` usa a precisão do README e é testado.
+- Validação: **708 passed** no loop rápido; **721 passed** na suíte completa com o corpus;
+  ruff e mypy limpos.
+
 ### Added — Tarefa 13, 2026-09-14
 
 - Verificação de coerência de configuração na partida (D-040): `open_live_stack` recusa,

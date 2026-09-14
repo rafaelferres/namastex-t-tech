@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from application.inspect_conversation import TurnReport
+from application.inspect_conversation import TurnReport, ladder_level
 from application.tracing import QuoteAttempt
 from application.turns import TurnEvent
 from domain.handoff import HandoffDecision
@@ -116,6 +116,12 @@ def render_turn(number: int, report: TurnReport) -> list[str]:
     )
     lines += ["", "**Políticas**", "", f"- Aceitação: {_acceptance(report)}"]
     lines.append(f"- Escalação: {_escalation(report.escalacao)}")
+    level = ladder_level(report)
+    if level is not None:
+        lines.append(f"- Escada: {level}")
+    for event in report.etapas:
+        if event.etapa == "guardrail":
+            lines.append(f"- Guardrail: fala do modelo descartada (`{event.erro}`)")
     opinion = next((event for event in report.etapas if event.etapa == "decisao"), None)
     if opinion is not None:
         lines.append(f"- Conversador: {_opinion(opinion)}")

@@ -36,7 +36,8 @@ src/
   agent/           LangGraph: grafo, nós, prompts, templates
   infrastructure/  quote/, planos/, llm/, media/, handoff/, persistence/, tracing/,
                    privacy/, wiring.py   (SQLite, httpx)
-  interfaces/      cli, replay, trace, rendering, conversation_report
+  interfaces/      cli, streamlit_app, replay, trace, rendering, conversation_report,
+                   evaluation, async_bridge, quote_api
 ```
 
 `domain/` e `application/` não importam `langgraph`, `httpx` nem `sqlite3`. O
@@ -50,12 +51,18 @@ Os adapters que existem consomem os mesmos casos de uso:
 | `cli` | conversa no terminal, com `--trace` e retomada por `--conversation` |
 | `replay` | envelopes redigidos de conversas do dataset; o harness fim a fim usa os mesmos |
 | `trace` | inspeção de uma cotação ou de uma conversa inteira, só leitura |
+| `streamlit_app` | console no navegador: sandbox com o trace ao lado e controles da API; aba de avaliação |
 
-Webhook de WhatsApp e console Streamlit não existem. Nenhum adapter contém lógica. Se
-um precisa de algo que os casos de uso não expõem, o buraco está na camada de aplicação.
-A CLI achou dois: o índice da próxima mensagem numa conversa retomada, agora
-`Ingestor.next_index`, e a inspeção ligada às conexões vivas, agora `SalesStack.inspector`,
-que drena a timeline antes de ler.
+Webhook de WhatsApp não existe. Nenhum adapter contém lógica. Se um precisa de algo que os
+casos de uso não expõem, o buraco está na camada de aplicação. A CLI achou dois: o índice
+da próxima mensagem numa conversa retomada, agora `Ingestor.next_index`, e a inspeção
+ligada às conexões vivas, agora `SalesStack.inspector`, que drena a timeline antes de ler.
+O console achou um: o nível da escada atingido no turno, agora `ladder_level` (D-041).
+
+O console (`streamlit_app`) guarda em `st.session_state` só o `thread_id`; pilha, ponte
+async (`AsyncBridge`, um loop numa thread) e a API do desafio como processo filho
+(`quote_api`) ficam num recurso de processo. A aba de avaliação chama as funções de
+`tests/golden`, `tests/regression` e `scripts/` por `interfaces/evaluation.py`.
 
 ---
 
